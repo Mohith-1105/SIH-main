@@ -13,7 +13,7 @@ from app.models.audit import AuditLog
 from app.models.ai_analysis import AIAnalysis
 from app.models.user import User
 from app.schemas import DashboardStats
-from app.security.auth import get_current_user
+from app.security.auth import get_current_user, visible_case_ids
 from app.config import settings
 
 router = APIRouter(prefix="/api", tags=["Dashboard"])
@@ -24,16 +24,29 @@ def get_dashboard(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    total_cases = db.query(Case).count()
-    total_evidence = db.query(Evidence).count()
-    verified = db.query(Evidence).filter(Evidence.integrity_status == "VERIFIED").count()
-    pending = db.query(Evidence).filter(Evidence.integrity_status == "PENDING").count()
+    ids = visible_case_ids(user, db)
+    case_scope = [] if ids is not None else None
+    if ids is not None:
+        case_scope = Case.id.in_(ids)
+        ev_scope = Evidence.case_id.in_(ids)
+    else:
+        ev_scope = None
+
+    total_cases = db.query(Case).count() if case_scope is None else db.query(Case).filter(case_scope).count()
+    total_evidence = db.query(Evidence).count() if ev_scope is None else db.query(Evidence).filter(ev_scope).count()
+    verified_q = db.query(Evidence).filter(Evidence.integrity_status == "VERIFIED")
+    pending_q = db.query(Evidence).filter(Evidence.integrity_status == "PENDING")
+    high_risk_q = db.query(AIAnalysis).join(Evidence, AIAnalysis.evidence_id == Evidence.id)
+    high_risk_q = high_risk_q.filter(AIAnalysis.risk_score >= 50)
+    if ev_scope is not None:
+        verified_q = verified_q.filter(ev_scope)
+        pending_q = pending_q.filter(ev_scope)
+        high_risk_q = high_risk_q.filter(ev_scope)
+    verified = verified_q.count()
+    pending = pending_q.count()
+    high_risk = high_risk_q.count()
     blocks = db.query(BlockchainBlock).count()
     transfers = db.query(CustodyEvent).filter(CustodyEvent.action.in_(["EVIDENCE_TRANSFERRED", "CUSTODY_TRANSFERRED"])).count()
-
-
-    # AI alerts (high risk)
-    high_risk = db.query(AIAnalysis).filter(AIAnalysis.risk_score >= 50).count()
 
     # Recent activity (filter out auth logins to keep dashboard focused on evidence & case operations)
     recent_logs = (
@@ -60,13 +73,19 @@ def get_dashboard(
     # Evidence by category
     categories = db.query(
         Evidence.classification, func.count(Evidence.id)
-    ).group_by(Evidence.classification).all()
+    )
+    if ev_scope is not None:
+        categories = categories.filter(ev_scope)
+    categories = categories.group_by(Evidence.classification).all()
     ev_by_cat = [{"name": c[0] or "OTHER", "value": c[1]} for c in categories]
 
     # Case status distribution
     case_statuses = db.query(
         Case.status, func.count(Case.id)
-    ).group_by(Case.status).all()
+    )
+    if case_scope is not None:
+        case_statuses = case_statuses.filter(case_scope)
+    case_statuses = case_statuses.group_by(Case.status).all()
     case_dist = [{"name": s[0], "value": s[1]} for s in case_statuses]
 
     # Evidence over time (last 7 days)
@@ -75,16 +94,25 @@ def get_dashboard(
         day = datetime.utcnow() - timedelta(days=i)
         day_start = day.replace(hour=0, minute=0, second=0)
         day_end = day.replace(hour=23, minute=59, second=59)
-        count = db.query(Evidence).filter(
+        count_q = db.query(Evidence).filter(
             Evidence.created_at >= day_start,
             Evidence.created_at <= day_end,
-        ).count()
-        ev_over_time.append({"date": day.strftime("%b %d"), "count": count})
+        )
+        if ev_scope is not None:
+            count_q = count_q.filter(ev_scope)
+        ev_over_time.append({"date": day.strftime("%b %d"), "count": count_q.count()})
 
     # Risk distribution
-    low = db.query(AIAnalysis).filter(AIAnalysis.risk_score < 30).count()
-    med = db.query(AIAnalysis).filter(AIAnalysis.risk_score >= 30, AIAnalysis.risk_score < 70).count()
-    high = db.query(AIAnalysis).filter(AIAnalysis.risk_score >= 70).count()
+    def _risk_count(lo, hi):
+        q = db.query(AIAnalysis).join(Evidence, AIAnalysis.evidence_id == Evidence.id)
+        q = q.filter(AIAnalysis.risk_score >= lo, AIAnalysis.risk_score < hi)
+        if ev_scope is not None:
+            q = q.filter(ev_scope)
+        return q.count()
+
+    low = _risk_count(0, 30)
+    med = _risk_count(30, 70)
+    high = _risk_count(70, 999)
     risk_dist = [
         {"name": "Low Risk", "value": low},
         {"name": "Medium Risk", "value": med},
@@ -92,7 +120,7 @@ def get_dashboard(
     ]
 
     # High risk alerts
-    high_risk_items = db.query(AIAnalysis).filter(AIAnalysis.risk_score >= 50).limit(5).all()
+    high_risk_items = high_risk_q.limit(5).all()
     alerts = []
     for a in high_risk_items:
         ev = db.query(Evidence).filter(Evidence.id == a.evidence_id).first()
@@ -153,12 +181,18 @@ def global_search(
 ):
     results = {"cases": [], "evidence": [], "people": []}
 
+    ids = visible_case_ids(user, db)
+    case_scope = [] if ids is None else Case.id.in_(ids)
+
     # Search cases
     cases = db.query(Case).filter(
         (Case.title.ilike(f"%{q}%")) |
         (Case.case_number.ilike(f"%{q}%")) |
         (Case.description.ilike(f"%{q}%"))
-    ).limit(10).all()
+    )
+    if case_scope is not None:
+        cases = cases.filter(case_scope)
+    cases = cases.limit(10).all()
     results["cases"] = [{"id": c.id, "case_number": c.case_number, "title": c.title} for c in cases]
 
     # Search evidence
@@ -166,7 +200,10 @@ def global_search(
         (Evidence.evidence_id.ilike(f"%{q}%")) |
         (Evidence.original_filename.ilike(f"%{q}%")) |
         (Evidence.description.ilike(f"%{q}%"))
-    ).limit(10).all()
+    )
+    if case_scope is not None:
+        evidence = evidence.filter(Evidence.case_id.in_(ids))
+    evidence = evidence.limit(10).all()
     results["evidence"] = [{"id": e.id, "evidence_id": e.evidence_id,
                            "filename": e.original_filename} for e in evidence]
 

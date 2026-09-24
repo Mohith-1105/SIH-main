@@ -30,7 +30,8 @@ SIH-main/evidence-vault/backend/storage/evidence/*
 !SIH-main/evidence-vault/backend/storage/evidence/demo_*
 !SIH-main/evidence-vault/backend/storage/evidence/.gitkeep
 
-# SQLite temporary files
+# SQLite database files
+*.db
 *.db-shm
 *.db-wal
 

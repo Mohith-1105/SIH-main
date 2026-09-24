@@ -17,6 +17,8 @@ from app.models.audit import AuditLog
 from app.models.ai_analysis import AIAnalysis
 from app.security.auth import hash_password, compute_sha256
 from app.security.auth import encrypt_file
+from app.security.auth import ROLE_DEFAULT_RANK
+from app.security.mfa import generate_totp_secret
 from app.blockchain.ledger import create_genesis_block, add_block
 from app.config import settings
 
@@ -45,6 +47,8 @@ def seed():
              "department": "Legal Affairs", "badge_number": "LEG-102"},
             {"email": "auditor@evidencevault.local", "full_name": "Audit Officer Mehra", "role": "AUDITOR",
              "department": "Internal Audit", "badge_number": "AUD-401"},
+            {"email": "constable@evidencevault.local", "full_name": "Constable Ravi Kumar", "role": "INVESTIGATOR",
+             "department": "Traffic Police", "badge_number": "CTB-001", "rank_level": 2},
         ]
         users = []
         for u in users_data:
@@ -53,8 +57,10 @@ def seed():
                 full_name=u["full_name"],
                 hashed_password=hash_password("demo123"),
                 role=u["role"],
+                rank_level=u.get("rank_level") or ROLE_DEFAULT_RANK.get(u["role"], 3),
                 department=u["department"],
                 badge_number=u["badge_number"],
+                totp_secret=generate_totp_secret(),
             )
             db.add(user)
             users.append(user)
@@ -394,6 +400,7 @@ def seed():
         print("  Forensic:     forensic@evidencevault.local / demo123")
         print("  Legal:        legal@evidencevault.local / demo123")
         print("  Auditor:      auditor@evidencevault.local / demo123")
+        print("  Constable:    constable@evidencevault.local / demo123 (rank 2 — scoped view)")
         print()
         print(f"  Users: {len(users)}")
         print(f"  Cases: {len(cases)}")

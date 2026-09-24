@@ -19,7 +19,9 @@ from app.schemas import (
     EvidenceOut, EvidencePassport, VerifyResult, VersionOut,
     CustodyEventOut, CustodyTransferRequest, GraphData, GraphNode, GraphEdge,
 )
-from app.security.auth import get_current_user, require_permission, require_any_permission, encrypt_file, decrypt_file, compute_sha256
+from app.security.auth import (get_current_user, require_permission, require_any_permission,
+                               ensure_evidence_access, ensure_case_access, scoped_case_filter,
+                               encrypt_file, decrypt_file, compute_sha256)
 from app.blockchain import add_block
 from app.ai.pipeline import run_pipeline
 from app.utils.helpers import (
@@ -53,6 +55,9 @@ def list_evidence(
     db: Session = Depends(get_db),
 ):
     q = db.query(Evidence)
+    scope = scoped_case_filter(user, db, Evidence.case_id)
+    if scope is not None:
+        q = q.filter(scope)
     if case_id:
         q = q.filter(Evidence.case_id == case_id)
     if classification:
@@ -83,6 +88,7 @@ async def upload_evidence(
     case = db.query(Case).filter(Case.id == case_id).first()
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
+    ensure_case_access(user, case, db)
 
     # Read file
     file_bytes = await file.read()
@@ -229,6 +235,7 @@ def get_evidence(
     ev = db.query(Evidence).filter(Evidence.id == evidence_id_param).first()
     if not ev:
         raise HTTPException(status_code=404, detail="Evidence not found")
+    ensure_evidence_access(user, ev, db)
 
     create_audit_log(db, user_id=user.id, user_email=user.email, role=user.role,
                     action="EVIDENCE_VIEWED", resource_type="EVIDENCE",
@@ -246,6 +253,7 @@ def download_evidence(
     ev = db.query(Evidence).filter(Evidence.id == evidence_id_param).first()
     if not ev:
         raise HTTPException(status_code=404, detail="Evidence not found")
+    ensure_evidence_access(user, ev, db)
 
     storage_path = os.path.join(settings.STORAGE_DIR, ev.encrypted_path)
     if not os.path.exists(storage_path):
@@ -278,6 +286,7 @@ def get_passport(
     ev = db.query(Evidence).filter(Evidence.id == evidence_id_param).first()
     if not ev:
         raise HTTPException(status_code=404, detail="Evidence not found")
+    ensure_evidence_access(user, ev, db)
 
     case = db.query(Case).filter(Case.id == ev.case_id).first()
     uploader = db.query(User).filter(User.id == ev.uploaded_by).first()
@@ -321,6 +330,7 @@ def verify_evidence(
     ev = db.query(Evidence).filter(Evidence.id == evidence_id_param).first()
     if not ev:
         raise HTTPException(status_code=404, detail="Evidence not found")
+    ensure_evidence_access(user, ev, db)
 
     # Recalculate hash by decrypting stored file
     storage_path = os.path.join(settings.STORAGE_DIR, ev.encrypted_path)
@@ -396,6 +406,7 @@ def transfer_custody(
     ev = db.query(Evidence).filter(Evidence.id == evidence_id_param).first()
     if not ev:
         raise HTTPException(status_code=404, detail="Evidence not found")
+    ensure_evidence_access(user, ev, db)
 
     target_id = req.target_user_id or req.recipient_user_id
     if not target_id:
@@ -446,6 +457,7 @@ async def create_version(
     ev = db.query(Evidence).filter(Evidence.id == evidence_id_param).first()
     if not ev:
         raise HTTPException(status_code=404, detail="Evidence not found")
+    ensure_evidence_access(user, ev, db)
 
     file_bytes = await file.read()
     error = validate_file(file.filename or "unnamed", file.content_type or "", len(file_bytes), file_bytes=file_bytes)
@@ -517,6 +529,7 @@ def get_versions(
     ev = db.query(Evidence).filter(Evidence.id == evidence_id_param).first()
     if not ev:
         raise HTTPException(status_code=404, detail="Evidence not found")
+    ensure_evidence_access(user, ev, db)
     versions = db.query(EvidenceVersion).filter(
         EvidenceVersion.evidence_id == ev.id
     ).order_by(EvidenceVersion.version_number).all()
@@ -533,6 +546,7 @@ def get_custody(
     ev = db.query(Evidence).filter(Evidence.id == evidence_id_param).first()
     if not ev:
         raise HTTPException(status_code=404, detail="Evidence not found")
+    ensure_evidence_access(user, ev, db)
     events = db.query(CustodyEvent).filter(
         CustodyEvent.evidence_id == ev.id
     ).order_by(CustodyEvent.timestamp).all()
@@ -548,6 +562,7 @@ def get_evidence_graph(
     ev = db.query(Evidence).filter(Evidence.id == evidence_id_param).first()
     if not ev:
         raise HTTPException(status_code=404, detail="Evidence not found")
+    ensure_evidence_access(user, ev, db)
 
     nodes = []
     edges = []

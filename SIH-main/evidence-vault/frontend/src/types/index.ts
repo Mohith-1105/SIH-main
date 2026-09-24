@@ -5,6 +5,7 @@ export interface User {
   role: string;
   department: string;
   badge_number: string;
+  rank_level?: number;
   is_active: boolean;
   created_at: string;
   last_login: string | null;
@@ -252,55 +253,22 @@ export interface PublicEvidenceVerification {
   qr_code: string;
   verified_at: string;
   evidence: {
-    id: number;
     evidence_id: string;
-    original_filename: string;
-    evidence_type: string;
     classification: string;
-    mime_type: string;
-    file_size: number;
-    sha256_hash: string;
     integrity_status: string;
     blockchain_status: string;
-    current_custodian: string;
     current_version: number;
-    uploaded_by: string;
+    sha256_hash: string;
     created_at: string;
-    uploaded_at?: string;
-  };
-  case: {
-    id: number;
-    case_number: string;
-    title: string;
-    description: string;
-    case_type: string;
-    status: string;
-    priority: string;
-    investigating_officer: string;
-    created_at: string;
-    updated_at?: string;
   };
   blockchain: {
     block_index: number;
     block_hash: string;
     previous_hash: string;
     timestamp: string;
-    tx_id: string;
     hash_match: boolean;
-    consensus: string;
     status: string;
   };
-  custody_trail: Array<{
-    id: number;
-    action: string;
-    actor_name: string;
-    actor_role: string;
-    location: string;
-    evidence_condition: string;
-    timestamp: string;
-    sha256_hash: string;
-    notes?: string;
-  }>;
 }
 
 export interface PublicCaseVerification {
@@ -309,30 +277,11 @@ export interface PublicCaseVerification {
   verification_url: string;
   qr_code: string;
   verified_at: string;
-  case: {
-    id: number;
-    case_number: string;
-    title: string;
-    description: string;
-    case_type: string;
-    status: string;
-    priority: string;
-    investigating_officer: string;
-    created_at: string;
-    updated_at?: string;
-  };
   evidence_count: number;
   evidence_list: Array<{
-    id: number;
     evidence_id: string;
-    original_filename: string;
-    evidence_type: string;
-    classification: string;
-    sha256_hash: string;
     integrity_status: string;
     blockchain_status: string;
-    current_custodian: string;
-    created_at: string;
     verify_link: string;
   }>;
   blockchain_seal: {

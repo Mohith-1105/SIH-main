@@ -12,7 +12,7 @@ from app.models.evidence import Evidence, CustodyEvent
 from app.models.case import Case
 from app.models.ai_analysis import AIAnalysis
 from app.models.user import User
-from app.security.auth import require_permission
+from app.security.auth import require_permission, ensure_evidence_access, visible_case_ids
 from app.blockchain import verify_evidence_blocks
 from app.utils.helpers import create_audit_log
 
@@ -22,6 +22,7 @@ router = APIRouter(prefix="/api/reports", tags=["Reports"])
 # --- Helper: Compute Case Report Data ---
 def compute_case_report_data(
     db: Session,
+    user: User,
     period: str = "weekly",
     case_type: Optional[str] = None,
     start_date: Optional[str] = None,
@@ -58,6 +59,9 @@ def compute_case_report_data(
         label = "Weekly Case Report (Past 7 Days)"
 
     query = db.query(Case).filter(Case.created_at >= start, Case.created_at <= end)
+    ids = visible_case_ids(user, db)
+    if ids is not None:
+        query = query.filter(Case.id.in_(ids))
     if case_type and case_type != "ALL":
         if case_type == "MURDER":
             query = query.filter(Case.case_type.in_(["MURDER", "HOMICIDE"]))
@@ -69,6 +73,8 @@ def compute_case_report_data(
     # Fallback to recent cases if database has no cases strictly in window (e.g. testing)
     if len(cases) == 0 and period_lower in ["weekly", "monthly"]:
         fallback_q = db.query(Case)
+        if ids is not None:
+            fallback_q = fallback_q.filter(Case.id.in_(ids))
         if case_type and case_type != "ALL":
             if case_type == "MURDER":
                 fallback_q = fallback_q.filter(Case.case_type.in_(["MURDER", "HOMICIDE"]))
@@ -166,7 +172,7 @@ def get_case_report_summary(
     db: Session = Depends(get_db),
 ):
     """Retrieve summarized weekly/monthly case analytics, classification breakdown, and case roster."""
-    data = compute_case_report_data(db, period=period, case_type=case_type, start_date=start_date, end_date=end_date)
+    data = compute_case_report_data(db, user, period=period, case_type=case_type, start_date=start_date, end_date=end_date)
     return data
 
 
@@ -181,7 +187,7 @@ def download_case_report_pdf(
     db: Session = Depends(get_db),
 ):
     """Generate and stream an official, formatted police/investigation PDF dossier for cases."""
-    data = compute_case_report_data(db, period=period, case_type=case_type, start_date=start_date, end_date=end_date)
+    data = compute_case_report_data(db, user, period=period, case_type=case_type, start_date=start_date, end_date=end_date)
 
     try:
         from reportlab.lib.pagesizes import A4
@@ -321,7 +327,7 @@ def download_case_report_csv(
     db: Session = Depends(get_db),
 ):
     """Generate and stream a CSV spreadsheet export of all cases in the reporting period."""
-    data = compute_case_report_data(db, period=period, case_type=case_type, start_date=start_date, end_date=end_date)
+    data = compute_case_report_data(db, user, period=period, case_type=case_type, start_date=start_date, end_date=end_date)
 
     output = io.StringIO()
     writer = csv.writer(output)
@@ -376,6 +382,7 @@ def generate_evidence_report(
     ev = db.query(Evidence).filter(Evidence.id == evidence_id).first()
     if not ev:
         raise HTTPException(status_code=404, detail="Evidence not found")
+    ensure_evidence_access(user, ev, db)
 
     case = db.query(Case).filter(Case.id == ev.case_id).first()
     ai = db.query(AIAnalysis).filter(AIAnalysis.evidence_id == ev.id).first()

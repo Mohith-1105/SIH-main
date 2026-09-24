@@ -73,6 +73,8 @@ def setup_database():
             )
             db.add(forensic)
 
+        db.flush()
+
         # Create test case
         c = db.query(Case).filter(Case.case_number == "CASE-TEST-PH2").first()
         if not c:
@@ -80,9 +82,12 @@ def setup_database():
                 case_number="CASE-TEST-PH2",
                 title="Phase 2 Verification Case",
                 description="Test case for Phase 2 validation",
-                created_by=1,
+                created_by=investigator.id,
             )
             db.add(c)
+
+        c.created_by = investigator.id
+        c.assigned_user_id = investigator.id
 
         db.commit()
     finally:
@@ -98,7 +103,7 @@ def test_evidence_upload_and_sha256():
     db = SessionLocal()
     c = db.query(Case).filter(Case.case_number == "CASE-TEST-PH2").first()
     case_id = c.id
-    investigator = db.query(User).filter(User.role == "INVESTIGATOR").first()
+    investigator = db.query(User).filter(User.email == "investigator_test@vault.local").first()
     db.close()
 
     token = get_token_for(investigator.email, "INVESTIGATOR", investigator.id)
@@ -129,7 +134,7 @@ def test_invalid_file_rejection():
     db = SessionLocal()
     c = db.query(Case).filter(Case.case_number == "CASE-TEST-PH2").first()
     case_id = c.id
-    investigator = db.query(User).filter(User.role == "INVESTIGATOR").first()
+    investigator = db.query(User).filter(User.email == "investigator_test@vault.local").first()
     db.close()
 
     token = get_token_for(investigator.email, "INVESTIGATOR", investigator.id)
@@ -161,7 +166,7 @@ def test_encryption_and_decryption():
     db = SessionLocal()
     c = db.query(Case).filter(Case.case_number == "CASE-TEST-PH2").first()
     case_id = c.id
-    investigator = db.query(User).filter(User.role == "INVESTIGATOR").first()
+    investigator = db.query(User).filter(User.email == "investigator_test@vault.local").first()
     db.close()
 
     token = get_token_for(investigator.email, "INVESTIGATOR", investigator.id)
@@ -198,7 +203,7 @@ def test_evidence_passport():
     db = SessionLocal()
     c = db.query(Case).filter(Case.case_number == "CASE-TEST-PH2").first()
     case_id = c.id
-    investigator = db.query(User).filter(User.role == "INVESTIGATOR").first()
+    investigator = db.query(User).filter(User.email == "investigator_test@vault.local").first()
     db.close()
 
     token = get_token_for(investigator.email, "INVESTIGATOR", investigator.id)
@@ -228,7 +233,7 @@ def test_integrity_verification_verified_and_tampered():
     db = SessionLocal()
     c = db.query(Case).filter(Case.case_number == "CASE-TEST-PH2").first()
     case_id = c.id
-    investigator = db.query(User).filter(User.role == "INVESTIGATOR").first()
+    investigator = db.query(User).filter(User.email == "investigator_test@vault.local").first()
     db.close()
 
     token = get_token_for(investigator.email, "INVESTIGATOR", investigator.id)
@@ -272,7 +277,7 @@ def test_evidence_versioning():
     db = SessionLocal()
     c = db.query(Case).filter(Case.case_number == "CASE-TEST-PH2").first()
     case_id = c.id
-    investigator = db.query(User).filter(User.role == "INVESTIGATOR").first()
+    investigator = db.query(User).filter(User.email == "investigator_test@vault.local").first()
     db.close()
 
     token = get_token_for(investigator.email, "INVESTIGATOR", investigator.id)
@@ -316,7 +321,7 @@ def test_custody_transfer_and_timeline():
     db = SessionLocal()
     c = db.query(Case).filter(Case.case_number == "CASE-TEST-PH2").first()
     case_id = c.id
-    investigator = db.query(User).filter(User.role == "INVESTIGATOR").first()
+    investigator = db.query(User).filter(User.email == "investigator_test@vault.local").first()
     forensic = db.query(User).filter(User.role == "FORENSIC_OFFICER").first()
     db.close()
 

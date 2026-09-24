@@ -53,6 +53,10 @@ def migrate_sqlite():
             ("change_reason", "TEXT DEFAULT ''"),
             ("uploaded_by", "VARCHAR(255) DEFAULT ''"),
         ],
+        "users": [
+            ("totp_secret", "VARCHAR(100) DEFAULT ''"),
+            ("rank_level", "INTEGER DEFAULT 3"),
+        ],
     }
     with engine.begin() as conn:
         for table, cols in additions.items():
@@ -62,6 +66,32 @@ def migrate_sqlite():
             for name, ddl in cols:
                 if name not in existing:
                     conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
+        # Backfill per-user TOTP secrets for rows created before the column existed
+        try:
+            from app.security.mfa import generate_totp_secret
+            rows = conn.execute(
+                text("SELECT id FROM users WHERE totp_secret IS NULL OR totp_secret = ''")
+            ).fetchall()
+            for (uid,) in rows:
+                conn.execute(
+                    text("UPDATE users SET totp_secret = :s WHERE id = :id"),
+                    {"s": generate_totp_secret(), "id": uid},
+                )
+        except Exception:
+            pass
+        # Backfill rank_level by role for rows created before the column existed
+        try:
+            from app.security.auth import ROLE_DEFAULT_RANK
+            rows = conn.execute(text(
+                "SELECT id, role FROM users WHERE rank_level IS NULL OR rank_level < 1 OR rank_level > 6"
+            )).fetchall()
+            for uid, role in rows:
+                conn.execute(
+                    text("UPDATE users SET rank_level = :r WHERE id = :id"),
+                    {"r": ROLE_DEFAULT_RANK.get(role, 3), "id": uid},
+                )
+        except Exception:
+            pass
         # Backfill stored_filename from encrypted_path
         try:
             conn.execute(text(

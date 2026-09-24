@@ -1,7 +1,7 @@
 """Pydantic schemas for request/response validation"""
 from datetime import datetime
 from typing import Optional, List, Any
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 
 
 # --- Auth ---
@@ -42,6 +42,7 @@ class UserOut(BaseModel):
     email: str
     full_name: str
     role: str
+    rank_level: int = 3
     department: str
     badge_number: str
     is_active: bool
@@ -57,6 +58,7 @@ class UserCreate(BaseModel):
     full_name: str
     password: str
     role: str = "INVESTIGATOR"
+    rank_level: Optional[int] = Field(None, ge=1, le=6)
     department: str = ""
     badge_number: str = ""
 

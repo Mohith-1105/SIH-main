@@ -295,18 +295,10 @@ export default function LoginPage() {
                       <button
                         type="button"
                         onClick={handleUseDemoCode}
-                        className="flex-1 py-1.5 px-2.5 rounded-lg bg-vault-600/30 hover:bg-vault-600/50 text-vault-200 text-xs font-medium border border-vault-500/40 transition-all flex items-center justify-center gap-1.5"
+                        className="w-full py-1.5 px-2.5 rounded-lg bg-vault-600/30 hover:bg-vault-600/50 text-vault-200 text-xs font-medium border border-vault-500/40 transition-all flex items-center justify-center gap-1.5"
                       >
                         {copiedCode ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <KeyRound className="w-3.5 h-3.5" />}
                         <span>{copiedCode ? 'Filled TOTP Code!' : 'Auto-Fill Current TOTP'}</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setMfaCode('123456')}
-                        className="py-1.5 px-2.5 rounded-lg bg-dark-800 hover:bg-dark-700 text-dark-300 hover:text-white text-xs border border-dark-700 transition-colors"
-                        title="Emergency forensic evaluation code"
-                      >
-                        Use 123456
                       </button>
                     </div>
                   </div>

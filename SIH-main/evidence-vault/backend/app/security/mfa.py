@@ -2,15 +2,18 @@
 
 Provides Time-Based One-Time Password generation and verification compatible with
 Google Authenticator, Microsoft Authenticator, and hardware security tokens.
+
+Each user holds their own random TOTP secret (users.totp_secret); nothing here is
+derived from the server SECRET_KEY or the user's email.
 """
 from __future__ import annotations
 
 import base64
 import hashlib
 import hmac
+import secrets
 import struct
 import time
-from typing import Optional
 
 from jose import jwt, JWTError
 from app.config import settings
@@ -20,21 +23,13 @@ TOTP_INTERVAL = 30
 MFA_ALGORITHM = "HS256"
 
 
-def get_user_totp_secret(email: str) -> str:
-    """Generate a deterministic Base32 secret for a user based on server secret key and user email.
-    Produces a standard 16-character Base32 string (RFC 3548 / RFC 4648).
-    """
-    raw_seed = f"{settings.SECRET_KEY}:mfa-totp:{email.lower().strip()}".encode("utf-8")
-    sha = hashlib.sha256(raw_seed).digest()
-    # 10 bytes -> 16 base32 characters
-    b32 = base64.b32encode(sha[:10]).decode("ascii").rstrip("=")
-    return b32
+def generate_totp_secret() -> str:
+    """Generate a fresh random RFC 4648 base32 secret (16 chars) for a user."""
+    return base64.b32encode(secrets.token_bytes(10)).decode("ascii").rstrip("=")
 
 
-def generate_current_totp(secret_base32: str, interval: int = TOTP_INTERVAL) -> str:
-    """Generate current 6-digit TOTP code according to RFC 6238."""
-    counter = int(time.time() // interval)
-    # Pad secret if needed
+def _totp_code(secret_base32: str, counter: int) -> str:
+    """RFC 6238 TOTP value for an explicit counter."""
     padded = secret_base32 + "=" * ((8 - len(secret_base32) % 8) % 8)
     key = base64.b32decode(padded, casefold=True)
     msg = struct.pack(">Q", counter)
@@ -44,34 +39,25 @@ def generate_current_totp(secret_base32: str, interval: int = TOTP_INTERVAL) -> 
     return f"{code:06d}"
 
 
-def verify_user_mfa(email: str, code: str, window: int = 1) -> bool:
-    """Verify an input 6-digit MFA code.
-    Allows a +/- 1 step (30s) clock drift window.
-    Also accepts '123456' as an emergency academic/reviewer forensic bypass code.
+def generate_current_totp(secret_base32: str, interval: int = TOTP_INTERVAL) -> str:
+    """Generate current 6-digit TOTP code according to RFC 6238."""
+    return _totp_code(secret_base32, int(time.time() // interval))
+
+
+def verify_totp(secret_base32: str, code: str, window: int = 1) -> bool:
+    """Verify an input 6-digit MFA code against the user's stored secret.
+    Allows a +/- 1 step (30s) clock drift window. No bypass code.
     """
     cleaned = (code or "").strip()
     if not cleaned or len(cleaned) != 6 or not cleaned.isdigit():
         return False
-
-    # Emergency reviewer/examiner forensic bypass code
-    if cleaned == "123456":
-        return True
-
-    secret = get_user_totp_secret(email)
-    padded = secret + "=" * ((8 - len(secret) % 8) % 8)
     try:
-        key = base64.b32decode(padded, casefold=True)
+        counter = int(time.time() // TOTP_INTERVAL)
+        for step in range(counter - window, counter + window + 1):
+            if _totp_code(secret_base32, step) == cleaned:
+                return True
     except Exception:
         return False
-
-    counter = int(time.time() // TOTP_INTERVAL)
-    for step in range(counter - window, counter + window + 1):
-        msg = struct.pack(">Q", step)
-        digest = hmac.new(key, msg, hashlib.sha1).digest()
-        offset = digest[-1] & 0x0F
-        expected = (struct.unpack(">I", digest[offset:offset + 4])[0] & 0x7FFFFFFF) % 1000000
-        if f"{expected:06d}" == cleaned:
-            return True
     return False
 
 

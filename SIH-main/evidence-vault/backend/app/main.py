@@ -4,6 +4,7 @@ FastAPI Main Application
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.config import settings
 from app.database import init_db
 from app.blockchain import create_genesis_block
 from app.database import SessionLocal
@@ -21,10 +22,10 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# CORS — allow frontend & mobile devices on local network
+# CORS — restricted to configured origins (see CORS_ORIGINS in .env)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.cors_origin_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

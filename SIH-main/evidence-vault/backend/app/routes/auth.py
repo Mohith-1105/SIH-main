@@ -3,6 +3,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.database import get_db
 from app.models.user import User
 from app.schemas import LoginRequest, LoginResponse, MfaVerifyRequest, TokenResponse, UserOut
@@ -10,15 +11,43 @@ from app.security.auth import (
     verify_password, create_access_token, get_current_user,
 )
 from app.security.mfa import (
-    get_user_totp_secret,
+    generate_totp_secret,
     generate_current_totp,
-    verify_user_mfa,
+    verify_totp,
     create_temp_mfa_token,
     decode_temp_mfa_token,
 )
+from app.security.ratelimit import guard
 from app.utils.helpers import create_audit_log
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
+
+
+def _throttle_key(email: str, client_ip: str) -> str:
+    return f"{email.lower().strip()}|{client_ip}"
+
+
+def _raise_locked(email: str, client_ip: str, device: str, db: Session) -> None:
+    create_audit_log(
+        db,
+        user_email=email,
+        role="UNKNOWN",
+        action="LOGIN",
+        status="BLOCKED",
+        ip_address=client_ip,
+        resource_type="AUTH",
+        resource_id=email,
+        details=f"Authentication temporarily locked due to repeated failed attempts via {device}",
+    )
+    raise HTTPException(status_code=429, detail="Too many failed attempts. Account temporarily locked. Try again later.")
+
+
+def _ensure_totp_secret(user: User, db: Session) -> str:
+    """Return the user's TOTP secret, generating one if the account is missing it."""
+    if not user.totp_secret:
+        user.totp_secret = generate_totp_secret()
+        db.commit()
+    return user.totp_secret
 
 
 def _extract_client_ip(request: Request) -> str:
@@ -44,6 +73,7 @@ def _detect_device(request: Request) -> str:
 
 
 def _issue_authenticated_session(user: User, client_ip: str, device: str, db: Session) -> LoginResponse:
+    guard.clear(_throttle_key(user.email, client_ip))
     token = create_access_token({"sub": str(user.id), "role": user.role})
     user.last_login = datetime.utcnow()
     db.commit()
@@ -82,9 +112,13 @@ def _issue_authenticated_session(user: User, client_ip: str, device: str, db: Se
 def login(req: LoginRequest, request: Request, db: Session = Depends(get_db)):
     client_ip = _extract_client_ip(request)
     device = _detect_device(request)
+    throttle_key = _throttle_key(req.email, client_ip)
+
+    if guard.blocked(throttle_key):
+        _raise_locked(req.email, client_ip, device, db)
 
     user = db.query(User).filter(User.email == req.email).first()
-    if not user or not verify_password(req.password, user.hashed_password):
+    if not user or not verify_password(req.password, user.hashed_password if user else "x"):
         create_audit_log(
             db,
             action="LOGIN",
@@ -96,6 +130,8 @@ def login(req: LoginRequest, request: Request, db: Session = Depends(get_db)):
             resource_id=req.email,
             details=f"Failed password authentication attempt via {device} (IP: {client_ip})",
         )
+        if guard.fail(throttle_key):
+            _raise_locked(req.email, client_ip, device, db)
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     if not user.is_active:
@@ -115,7 +151,7 @@ def login(req: LoginRequest, request: Request, db: Session = Depends(get_db)):
 
     # If an MFA code was supplied directly in LoginRequest, verify it immediately
     if req.mfa_code:
-        if not verify_user_mfa(user.email, req.mfa_code):
+        if not verify_totp(_ensure_totp_secret(user, db), req.mfa_code):
             create_audit_log(
                 db,
                 user_id=user.id,
@@ -128,13 +164,15 @@ def login(req: LoginRequest, request: Request, db: Session = Depends(get_db)):
                 resource_id=user.badge_number or f"USR-{user.id:04d}",
                 details=f"Failed MFA TOTP challenge for {user.full_name} via {device}",
             )
+            if guard.fail(throttle_key):
+                _raise_locked(user.email, client_ip, device, db)
             raise HTTPException(status_code=401, detail="Invalid 6-digit MFA security code")
         return _issue_authenticated_session(user, client_ip, device, db)
 
     # Password verified: Issue MFA challenge token for Step 2
     temp_token = create_temp_mfa_token(user.id, user.email)
-    secret = get_user_totp_secret(user.email)
-    demo_code = generate_current_totp(secret)
+    secret = _ensure_totp_secret(user, db)
+    demo_code = generate_current_totp(secret) if settings.DEMO_MODE else None
 
     create_audit_log(
         db,
@@ -175,7 +213,11 @@ def verify_mfa_code(req: MfaVerifyRequest, request: Request, db: Session = Depen
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="User account invalid or disabled")
 
-    if not verify_user_mfa(user.email, req.mfa_code):
+    throttle_key = _throttle_key(user.email, client_ip)
+    if guard.blocked(throttle_key):
+        _raise_locked(user.email, client_ip, device, db)
+
+    if not verify_totp(_ensure_totp_secret(user, db), req.mfa_code):
         create_audit_log(
             db,
             user_id=user.id,
@@ -188,6 +230,8 @@ def verify_mfa_code(req: MfaVerifyRequest, request: Request, db: Session = Depen
             resource_id=user.badge_number or f"USR-{user.id:04d}",
             details=f"Failed MFA TOTP challenge for {user.full_name} via {device}",
         )
+        if guard.fail(throttle_key):
+            _raise_locked(user.email, client_ip, device, db)
         raise HTTPException(status_code=401, detail="Invalid 6-digit MFA security code")
 
     return _issue_authenticated_session(user, client_ip, device, db)

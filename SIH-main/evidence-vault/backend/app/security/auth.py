@@ -149,36 +149,53 @@ def require_any_permission(*permissions: str):
     return _checker
 
 
+# --- Rank hierarchy (data scope) ---
+RANK_MIN, RANK_MAX = 1, 6
+RANK_OWN_ONLY_MAX = 2    # ranks 1-2: own cases only
+RANK_UNIT_MAX = 4        # ranks 3-4: own + same-department
+ROLE_DEFAULT_RANK = {
+    "ADMIN": 6, "AUDITOR": 6, "FORENSIC_OFFICER": 5,
+    "LEGAL_OFFICER": 5, "INVESTIGATOR": 3,
+}
+
+
+def user_rank(u: User) -> int:
+    """Effective rank level, safe for rows that predate the column."""
+    rank = getattr(u, "rank_level", None) or ROLE_DEFAULT_RANK.get(u.role, 3)
+    return min(max(int(rank), RANK_MIN), RANK_MAX)
+
+
 def visible_case_ids(user: User, db: Session):
-    """INVESTIGATOR sees assigned cases; others with cases.read see all."""
+    """Case IDs visible to this user, or None (unrestricted). Rank-driven; role only
+    exempts ADMIN. Evidence visibility = visibility of its case."""
     from app.models.case import Case
-    if user.role == "ADMIN" or user.role in {"AUDITOR", "LEGAL_OFFICER", "FORENSIC_OFFICER"}:
+    if user.role == "ADMIN" or user_rank(user) >= 5:
         return None
-    rows = db.query(Case.id).filter(
-        (Case.assigned_user_id == user.id) | (Case.created_by == user.id)
-    ).all()
-    return [r[0] for r in rows]
+    scope = (Case.assigned_user_id == user.id) | (Case.created_by == user.id)
+    if user_rank(user) >= 3 and user.department:
+        mates = db.query(User.id).filter(User.department == user.department).all()
+        ids = [m[0] for m in mates]
+        scope = scope | Case.assigned_user_id.in_(ids) | Case.created_by.in_(ids)
+    return [r[0] for r in db.query(Case.id).filter(scope).all()]
 
 
 def ensure_case_access(user: User, case, db: Session):
     ids = visible_case_ids(user, db)
-    if ids is None:
-        return
-    if case.id not in ids:
+    if ids is not None and case.id not in ids:
         raise HTTPException(status_code=403, detail="Not authorized to access this case")
 
 
 def ensure_evidence_access(user: User, evidence, db: Session):
-    if user.role == "ADMIN" or user.role in {"AUDITOR"}:
-        return
-    if user.role == "FORENSIC_OFFICER":
-        # Assigned evidence: currently in their custody, or any they may verify
-        if evidence.custodian_id == user.id:
-            return
-        # Forensic officers may view evidence belonging to open lab workflow (all cases)
-        return
-    if user.role == "LEGAL_OFFICER":
-        return
+    from app.models.case import Case
+    case = db.query(Case).filter(Case.id == evidence.case_id).first()
+    if case is None:
+        raise HTTPException(status_code=404, detail="Case not found")
+    ensure_case_access(user, case, db)
+
+
+def scoped_case_filter(user: User, db: Session, ids_column):
+    """SQLAlchemy filter for list queries, or None when unrestricted."""
     ids = visible_case_ids(user, db)
-    if ids is not None and evidence.case_id not in ids:
-        raise HTTPException(status_code=403, detail="Not authorized to access this evidence")
+    if ids is None:
+        return None
+    return ids_column.in_(ids)

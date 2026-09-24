@@ -1,5 +1,9 @@
 """Public verification routes for QR code scanning on mobile and laptop devices.
 No JWT authentication required — allows instant public verification.
+Authenticity-only surface (SPEC-verify): proves ledger existence + untampered
+state; deliberately withholds case narrative, custody trail, filenames, and
+personnel. Opaque public identifiers (EV-…/CASE-…) only; integer DB ids are
+rejected to prevent enumeration. The verification URL/QR is the bearer credential.
 """
 import socket
 from datetime import datetime
@@ -10,9 +14,8 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.case import Case
-from app.models.evidence import Evidence, CustodyEvent
+from app.models.evidence import Evidence
 from app.models.blockchain import BlockchainBlock
-from app.models.user import User
 from app.utils.helpers import generate_qr_base64
 
 router = APIRouter(prefix="/api/public", tags=["Public Verification"])
@@ -96,30 +99,15 @@ def verify_evidence_public(
     host: Optional[str] = Query(None, description="Optional custom host override e.g. 192.168.1.5:5173 or localhost:5173"),
     db: Session = Depends(get_db),
 ):
-    """Publicly verify an evidence item and its parent case.
-    Accepts evidence_id (e.g. EV-2026-000001) or database integer ID.
+    """Publicly verify an evidence item is genuine and untampered.
+    Requires the opaque public ID (e.g. EV-2026-000001). Integer DB ids are rejected.
+    Returns authenticity only — no case metadata, custody trail, filenames, or personnel.
     """
-    ev = None
-    if identifier.isdigit():
-        ev = db.query(Evidence).filter(Evidence.id == int(identifier)).first()
-    if not ev:
-        ev = db.query(Evidence).filter(Evidence.evidence_id == identifier).first()
-
+    ev = db.query(Evidence).filter(Evidence.evidence_id == identifier).first()
     if not ev:
         raise HTTPException(status_code=404, detail="Evidence not found")
 
-    case = db.query(Case).filter(Case.id == ev.case_id).first()
-    if not case:
-        raise HTTPException(status_code=404, detail="Associated case not found")
-
-    uploader = db.query(User).filter(User.id == ev.uploaded_by).first()
     block = db.query(BlockchainBlock).filter(BlockchainBlock.evidence_id == ev.id).first()
-    custody_events = (
-        db.query(CustodyEvent)
-        .filter(CustodyEvent.evidence_id == ev.id)
-        .order_by(CustodyEvent.timestamp.asc())
-        .all()
-    )
 
     base_url = get_base_client_url(request, host)
     verification_url = f"{base_url}/verify/evidence/{ev.evidence_id}"
@@ -139,58 +127,22 @@ def verify_evidence_public(
         "qr_code": qr_code,
         "verified_at": datetime.utcnow().isoformat(),
         "evidence": {
-            "id": ev.id,
             "evidence_id": ev.evidence_id,
-            "original_filename": ev.original_filename,
-            "evidence_type": ev.evidence_type,
             "classification": ev.classification or ev.evidence_type,
-            "mime_type": ev.mime_type,
-            "file_size": ev.file_size,
-            "sha256_hash": ev.sha256_hash,
             "integrity_status": ev.integrity_status,
             "blockchain_status": ev.blockchain_status,
-            "current_custodian": ev.current_custodian,
             "current_version": ev.current_version,
-            "uploaded_by": uploader.full_name if uploader else "Investigating Officer",
+            "sha256_hash": ev.sha256_hash,
             "created_at": ev.created_at.isoformat() if ev.created_at else None,
-            "uploaded_at": (ev.uploaded_at or ev.created_at).isoformat() if (ev.uploaded_at or ev.created_at) else None,
-        },
-        "case": {
-            "id": case.id,
-            "case_number": case.case_number,
-            "title": case.title,
-            "description": case.description,
-            "case_type": case.case_type,
-            "status": case.status,
-            "priority": case.priority,
-            "investigating_officer": case.investigating_officer,
-            "created_at": case.created_at.isoformat() if case.created_at else None,
-            "updated_at": case.updated_at.isoformat() if case.updated_at else None,
         },
         "blockchain": {
             "block_index": block.block_index if block else 1,
             "block_hash": block.block_hash if block else "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
             "previous_hash": block.previous_hash if block else "0000000000000000000000000000000000000000000000000000000000000000",
             "timestamp": block.timestamp.isoformat() if block and block.timestamp else datetime.utcnow().isoformat(),
-            "tx_id": f"TX-SEC-{ev.evidence_id[:12]}-{block.block_index if block else 1}",
             "hash_match": hash_match,
-            "consensus": "Proof-of-Authority (PoA) Police Forensic Node",
             "status": "SEALED_ON_CHAIN" if block else "ANCHORED",
         },
-        "custody_trail": [
-            {
-                "id": c.id,
-                "action": c.action,
-                "actor_name": c.actor_name,
-                "actor_role": c.actor_role,
-                "location": c.location,
-                "evidence_condition": c.evidence_condition,
-                "timestamp": c.timestamp.isoformat() if c.timestamp else None,
-                "sha256_hash": c.sha256_hash,
-                "notes": c.notes,
-            }
-            for c in custody_events
-        ],
     }
 
 
@@ -201,15 +153,11 @@ def verify_case_public(
     host: Optional[str] = Query(None, description="Optional custom host override"),
     db: Session = Depends(get_db),
 ):
-    """Publicly verify a complete case and list of associated secured evidence.
-    Accepts case_number (e.g. CASE-2026-001) or database integer ID.
+    """Publicly verify a case's evidence set is intact.
+    Requires the opaque public ID (e.g. CASE-2026-001). Integer DB ids are rejected.
+    Returns authenticity only — no case narrative, filenames, or hashes.
     """
-    case = None
-    if identifier.isdigit():
-        case = db.query(Case).filter(Case.id == int(identifier)).first()
-    if not case:
-        case = db.query(Case).filter(Case.case_number == identifier).first()
-
+    case = db.query(Case).filter(Case.case_number == identifier).first()
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
 
@@ -225,16 +173,9 @@ def verify_case_public(
         if ev.integrity_status != "VERIFIED":
             all_verified = False
         items_out.append({
-            "id": ev.id,
             "evidence_id": ev.evidence_id,
-            "original_filename": ev.original_filename,
-            "evidence_type": ev.evidence_type,
-            "classification": ev.classification or ev.evidence_type,
-            "sha256_hash": ev.sha256_hash,
             "integrity_status": ev.integrity_status,
             "blockchain_status": ev.blockchain_status,
-            "current_custodian": ev.current_custodian,
-            "created_at": ev.created_at.isoformat() if ev.created_at else None,
             "verify_link": f"{base_url}/verify/evidence/{ev.evidence_id}",
         })
 
@@ -244,18 +185,6 @@ def verify_case_public(
         "verification_url": verification_url,
         "qr_code": qr_code,
         "verified_at": datetime.utcnow().isoformat(),
-        "case": {
-            "id": case.id,
-            "case_number": case.case_number,
-            "title": case.title,
-            "description": case.description,
-            "case_type": case.case_type,
-            "status": case.status,
-            "priority": case.priority,
-            "investigating_officer": case.investigating_officer,
-            "created_at": case.created_at.isoformat() if case.created_at else None,
-            "updated_at": case.updated_at.isoformat() if case.updated_at else None,
-        },
         "evidence_count": len(items_out),
         "evidence_list": items_out,
         "blockchain_seal": {

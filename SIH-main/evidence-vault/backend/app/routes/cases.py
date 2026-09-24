@@ -10,7 +10,7 @@ from app.models.ai_analysis import AIAnalysis
 from app.models.blockchain import BlockchainBlock
 from app.models.user import User
 from app.schemas import CaseCreate, CaseUpdate, CaseOut
-from app.security.auth import get_current_user, require_permission
+from app.security.auth import get_current_user, require_permission, ensure_case_access, scoped_case_filter
 from app.utils.helpers import generate_case_number, create_audit_log
 
 router = APIRouter(prefix="/api/cases", tags=["Cases"])
@@ -27,6 +27,9 @@ def list_cases(
     db: Session = Depends(get_db),
 ):
     q = db.query(Case)
+    scope = scoped_case_filter(user, db, Case.id)
+    if scope is not None:
+        q = q.filter(scope)
     if status:
         q = q.filter(Case.status == status)
     if case_type:
@@ -85,6 +88,7 @@ def get_case(
     case = db.query(Case).filter(Case.id == case_id).first()
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
+    ensure_case_access(user, case, db)
     out = CaseOut.model_validate(case)
     out.evidence_count = db.query(Evidence).filter(Evidence.case_id == case.id).count()
     return out
@@ -100,6 +104,7 @@ def update_case(
     case = db.query(Case).filter(Case.id == case_id).first()
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
+    ensure_case_access(user, case, db)
 
     for field, value in req.model_dump(exclude_unset=True).items():
         setattr(case, field, value)
@@ -124,6 +129,7 @@ def list_case_evidence(
     case = db.query(Case).filter(Case.id == case_id).first()
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
+    ensure_case_access(user, case, db)
     
     evidences = db.query(Evidence).filter(Evidence.case_id == case_id).order_by(Evidence.created_at.desc()).all()
     from app.routes.evidence import _evidence_to_out
@@ -140,6 +146,7 @@ def get_case_flow(
     case = db.query(Case).filter(Case.id == case_id).first()
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
+    ensure_case_access(user, case, db)
 
     evidences = db.query(Evidence).filter(Evidence.case_id == case_id).all()
     ev_count = len(evidences)
@@ -485,6 +492,7 @@ def advance_case_stage(
     case = db.query(Case).filter(Case.id == case_id).first()
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
+    ensure_case_access(user, case, db)
 
     if stage_id in ["case_closed", "closed"]:
         case.status = "CLOSED"

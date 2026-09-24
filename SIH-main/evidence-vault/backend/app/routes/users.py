@@ -5,7 +5,8 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.user import User
 from app.schemas import UserOut, UserCreate
-from app.security.auth import require_permission, hash_password
+from app.security.auth import require_permission, hash_password, ROLE_DEFAULT_RANK
+from app.security.mfa import generate_totp_secret
 
 router = APIRouter(prefix="/api/users", tags=["Users"])
 
@@ -34,8 +35,10 @@ def create_user(
         full_name=req.full_name,
         hashed_password=hash_password(req.password),
         role=req.role,
+        rank_level=req.rank_level or ROLE_DEFAULT_RANK.get(req.role, 3),
         department=req.department,
         badge_number=req.badge_number,
+        totp_secret=generate_totp_secret(),
     )
     db.add(new_user)
     db.commit()

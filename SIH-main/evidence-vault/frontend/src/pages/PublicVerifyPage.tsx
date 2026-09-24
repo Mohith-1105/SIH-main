@@ -2,13 +2,11 @@ import { useState, useEffect } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import {
   Shield, CheckCircle2, AlertTriangle, Copy, Check, ExternalLink,
-  Lock, FileText, Calendar, User, Clock, Printer,
-  Layers, QrCode, Search, RefreshCw, Hash, ShieldCheck, FolderOpen
+  Lock, Clock, Printer, QrCode, Search, RefreshCw, Hash, ShieldCheck
 } from 'lucide-react';
 
 import { publicApi } from '../services/api';
 import type { PublicEvidenceVerification, PublicCaseVerification } from '../types';
-import { getCaseClassification } from '../utils/caseClassifications';
 
 export default function PublicVerifyPage() {
   const { id, evidenceId, caseId } = useParams<{ id?: string; evidenceId?: string; caseId?: string }>();
@@ -111,14 +109,6 @@ export default function PublicVerifyPage() {
     } else {
       navigate(`/verify/evidence/${q}`);
     }
-  };
-
-  const formatFileSize = (bytes: number) => {
-    if (!bytes) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
   };
 
   const formatDate = (dateStr?: string | null) => {
@@ -263,68 +253,7 @@ export default function PublicVerifyPage() {
               </div>
             </div>
 
-            {/* Case Details Card */}
-            {(() => {
-              const classInfo = getCaseClassification(evidenceData.case.case_type);
-              const CaseIcon = classInfo.icon;
-              return (
-                <div className="glass-card p-5 border-dark-700/80">
-                  <div className="flex items-center justify-between pb-3 mb-4 border-b border-dark-700/60">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-semibold uppercase tracking-wider text-dark-400">Associated Legal Case</span>
-                    </div>
-                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${classInfo.badge}`}>
-                      <CaseIcon className="w-3.5 h-3.5" />
-                      <span>{classInfo.label}</span>
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                    <div>
-                      <p className="text-dark-500 mb-0.5">Case Number</p>
-                      <p className="text-sm font-mono font-bold text-vault-400">{evidenceData.case.case_number}</p>
-                    </div>
-                    <div>
-                      <p className="text-dark-500 mb-0.5">Incident Title</p>
-                      <p className="text-sm font-semibold text-white">{evidenceData.case.title}</p>
-                    </div>
-                    <div>
-                      <p className="text-dark-500 mb-0.5">Investigating Officer</p>
-                      <p className="font-medium text-dark-200 flex items-center gap-1.5">
-                        <User className="w-3.5 h-3.5 text-vault-400" />
-                        {evidenceData.case.investigating_officer || 'Assigned Investigator'}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-dark-500 mb-0.5">Registration Date</p>
-                      <p className="text-dark-200 flex items-center gap-1.5">
-                        <Calendar className="w-3.5 h-3.5 text-vault-400" />
-                        {formatDate(evidenceData.case.created_at)}
-                      </p>
-                    </div>
-                  </div>
-
-                  {evidenceData.case.description && (
-                    <div className="mt-3 pt-3 border-t border-dark-700/50 text-xs">
-                      <p className="text-dark-500 mb-1">Case Brief</p>
-                      <p className="text-dark-300 italic">{evidenceData.case.description}</p>
-                    </div>
-                  )}
-
-                  <div className="mt-3 pt-3 border-t border-dark-700/50 flex justify-end">
-                    <button
-                      onClick={() => navigate(`/verify/case/${evidenceData.case.case_number}`)}
-                      className="inline-flex items-center gap-1.5 text-xs text-vault-400 hover:text-vault-300 font-medium py-1.5 px-3 rounded-lg bg-vault-600/10 border border-vault-500/20 hover:bg-vault-600/20 transition-all cursor-pointer"
-                    >
-                      <FolderOpen className="w-3.5 h-3.5" />
-                      <span>View Complete Case Docket & All Evidence ({evidenceData.case.case_number}) →</span>
-                    </button>
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* Evidence File Details Card */}
+            {/* Evidence Asset Detail */}
             <div className="glass-card p-5 border-dark-700/80 space-y-4">
               <div className="flex items-center justify-between pb-3 border-b border-dark-700/60">
                 <span className="text-xs font-semibold uppercase tracking-wider text-dark-400">Seized Evidence Asset</span>
@@ -333,24 +262,14 @@ export default function PublicVerifyPage() {
                 </span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
-                <div>
-                  <p className="text-dark-500 mb-0.5">Original Filename</p>
-                  <p className="text-sm font-semibold text-white break-all flex items-center gap-1.5">
-                    <FileText className="w-4 h-4 text-vault-400 shrink-0" />
-                    {evidenceData.evidence.original_filename}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-dark-500 mb-0.5">Classification & Format</p>
-                  <p className="font-medium text-dark-200 uppercase">
-                    {evidenceData.evidence.classification || 'GENERAL'} ({evidenceData.evidence.mime_type ? (evidenceData.evidence.mime_type.split('/')[1] || evidenceData.evidence.mime_type) : 'RAW'})
-                  </p>
-                </div>
-                <div>
-                  <p className="text-dark-500 mb-0.5">Encrypted File Size</p>
-                  <p className="font-mono text-dark-200">{formatFileSize(evidenceData.evidence.file_size)}</p>
-                </div>
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <span className="text-dark-500">Integrity Status</span>
+                <span className="text-xs px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 uppercase font-semibold">
+                  {evidenceData.evidence.integrity_status}
+                </span>
+                {evidenceData.evidence.classification && (
+                  <span className="text-dark-400 font-mono uppercase">{evidenceData.evidence.classification}</span>
+                )}
               </div>
 
               {/* SHA-256 Hash Display */}
@@ -372,17 +291,6 @@ export default function PublicVerifyPage() {
                   {evidenceData.evidence.sha256_hash}
                 </p>
               </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs pt-1">
-                <div>
-                  <p className="text-dark-500 mb-0.5">Current Legal Custodian</p>
-                  <p className="font-medium text-white">{evidenceData.evidence.current_custodian}</p>
-                </div>
-                <div>
-                  <p className="text-dark-500 mb-0.5">Registration Officer</p>
-                  <p className="text-dark-300">{evidenceData.evidence.uploaded_by}</p>
-                </div>
-              </div>
             </div>
 
             {/* Blockchain Proof Card */}
@@ -401,10 +309,6 @@ export default function PublicVerifyPage() {
                   <p className="text-dark-500 mb-0.5">Block Index</p>
                   <p className="font-mono text-sm font-bold text-white">#{evidenceData.blockchain.block_index}</p>
                 </div>
-                <div>
-                  <p className="text-dark-500 mb-0.5">Transaction ID</p>
-                  <p className="font-mono text-xs text-cyan-300 break-all">{evidenceData.blockchain.tx_id}</p>
-                </div>
               </div>
 
               <div>
@@ -420,41 +324,6 @@ export default function PublicVerifyPage() {
                   {evidenceData.blockchain.previous_hash}
                 </p>
               </div>
-            </div>
-
-            {/* Chain of Custody Timeline */}
-            <div className="glass-card p-5 border-dark-700/80">
-              <div className="flex items-center justify-between pb-3 mb-4 border-b border-dark-700/60">
-                <span className="text-xs font-semibold uppercase tracking-wider text-dark-400 flex items-center gap-1.5">
-                  <Layers className="w-3.5 h-3.5 text-vault-400" /> Chain-of-Custody Timeline
-                </span>
-                <span className="text-xs text-dark-400">{evidenceData.custody_trail.length} recorded events</span>
-              </div>
-
-              {evidenceData.custody_trail.length === 0 ? (
-                <p className="text-xs text-dark-400 italic">No transfers recorded since genesis seizure.</p>
-              ) : (
-                <div className="relative pl-6 space-y-6 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-dark-700">
-                  {evidenceData.custody_trail.map((evt, idx) => (
-                    <div key={evt.id || idx} className="relative">
-                      <div className="absolute -left-6 top-1 w-2.5 h-2.5 rounded-full bg-vault-500 border-2 border-dark-900 ring-2 ring-vault-600/30" />
-                      <div className="bg-dark-800/60 p-3 rounded-lg border border-dark-700/60 text-xs space-y-1">
-                        <div className="flex flex-wrap items-center justify-between gap-1">
-                          <span className="font-semibold text-white uppercase tracking-wider">{evt.action}</span>
-                          <span className="text-[11px] text-dark-400 font-mono">{formatDate(evt.timestamp)}</span>
-                        </div>
-                        <p className="text-dark-300">
-                          Handler: <strong className="text-white">{evt.actor_name}</strong> ({evt.actor_role})
-                        </p>
-                        <p className="text-dark-400 text-[11px]">
-                          Facility: {evt.location} • Condition: <span className="text-emerald-400 font-medium">{evt.evidence_condition}</span>
-                        </p>
-                        {evt.notes && <p className="text-dark-400 italic mt-1">{evt.notes}</p>}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
 
             {/* Scanned QR Code Visual Badge */}
@@ -483,53 +352,42 @@ export default function PublicVerifyPage() {
         {!loading && !error && caseData && (
           <div className="space-y-6 animate-fade-in">
             {/* Top Official Case Header */}
-            {(() => {
-              const classInfo = getCaseClassification(caseData.case.case_type);
-              const CaseIcon = classInfo.icon;
-              return (
-                <div className="relative overflow-hidden rounded-2xl border-2 border-vault-500/40 bg-gradient-to-br from-vault-950/40 via-dark-900 to-dark-950 p-6 shadow-2xl">
-                  <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4 text-center sm:text-left">
-                    <div className="w-16 h-16 rounded-2xl bg-vault-600/20 border-2 border-vault-400/50 flex items-center justify-center text-vault-400 shadow-lg shadow-vault-500/20 shrink-0">
-                      <CaseIcon className="w-9 h-9" />
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 mb-1.5">
-                        <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-bold uppercase tracking-wider border border-emerald-500/40 flex items-center gap-1">
-                          <CheckCircle2 className="w-3.5 h-3.5" /> Police Docket Verified
-                        </span>
-                        <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold ${classInfo.badge}`}>
-                          {classInfo.label}
-                        </span>
-                      </div>
-                      <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
-                        {caseData.case.title}
-                      </h1>
-                      <p className="text-xs font-mono text-vault-400 font-bold mt-1">
-                        Case Docket #{caseData.case.case_number}
-                      </p>
-                      <p className="text-xs text-dark-300 mt-2">
-                        {caseData.case.description || 'Official police investigation record.'}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="mt-5 pt-4 border-t border-vault-500/20 flex flex-wrap items-center justify-between gap-3 text-xs text-dark-400">
-                    <div className="flex items-center gap-3">
-                      <span>Officer: <strong className="text-white">{caseData.case.investigating_officer || 'Lead Detective'}</strong></span>
-                      <span>Status: <strong className="text-cyan-400">{caseData.case.status}</strong></span>
-                      <span>Priority: <strong className="text-amber-400">{caseData.case.priority}</strong></span>
-                    </div>
-                    <button
-                      onClick={() => copyToClipboard(window.location.href, 'url')}
-                      className="flex items-center gap-1 text-[11px] px-2.5 py-1 rounded bg-dark-800 hover:bg-dark-700 text-vault-400 border border-vault-500/30 transition-colors"
-                    >
-                      {copiedUrl ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                      <span>{copiedUrl ? 'Link Copied!' : 'Copy Case Link'}</span>
-                    </button>
-                  </div>
+            <div className="relative overflow-hidden rounded-2xl border-2 border-vault-500/40 bg-gradient-to-br from-vault-950/40 via-dark-900 to-dark-950 p-6 shadow-2xl">
+              <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4 text-center sm:text-left">
+                <div className="w-16 h-16 rounded-2xl bg-vault-600/20 border-2 border-vault-400/50 flex items-center justify-center text-vault-400 shadow-lg shadow-vault-500/20 shrink-0">
+                  <ShieldCheck className="w-10 h-10" />
                 </div>
-              );
-            })()}
+                <div className="flex-1">
+                  <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 mb-1.5">
+                    <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-bold uppercase tracking-wider border border-emerald-500/40 flex items-center gap-1">
+                      <CheckCircle2 className="w-3.5 h-3.5" /> Case Docket Verified
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full bg-dark-800 text-dark-300 text-[11px] font-mono border border-dark-700">
+                      {caseData.evidence_count} secured item(s)
+                    </span>
+                  </div>
+                  <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+                    Official Case Integrity Certificate
+                  </h1>
+                  <p className="text-xs text-dark-300 mt-2">
+                    Every evidence item registered under this docket was found intact on the immutable ledger — no tampering detected.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-5 pt-4 border-t border-vault-500/20 flex flex-wrap items-center justify-between gap-3 text-xs text-dark-400">
+                <div className="flex items-center gap-3">
+                  <span>All Items Intact: <strong className={caseData.all_evidence_intact ? 'text-emerald-400' : 'text-red-400'}>{caseData.all_evidence_intact ? 'YES' : 'NO'}</strong></span>
+                </div>
+                <button
+                  onClick={() => copyToClipboard(window.location.href, 'url')}
+                  className="flex items-center gap-1 text-[11px] px-2.5 py-1 rounded bg-dark-800 hover:bg-dark-700 text-vault-400 border border-vault-500/30 transition-colors"
+                >
+                  {copiedUrl ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                  <span>{copiedUrl ? 'Link Copied!' : 'Copy Case Link'}</span>
+                </button>
+              </div>
+            </div>
 
             {/* List of Evidence Secured Under This Case */}
             <div className="glass-card p-5 border-dark-700/80 space-y-4">
@@ -546,7 +404,7 @@ export default function PublicVerifyPage() {
                 <div className="space-y-3">
                   {caseData.evidence_list.map((ev) => (
                     <div
-                      key={ev.id}
+                      key={ev.evidence_id}
                       onClick={() => navigate(`/verify/evidence/${ev.evidence_id}`)}
                       className="p-3.5 rounded-xl bg-dark-800/40 hover:bg-dark-800 border border-dark-700/60 hover:border-vault-500/50 cursor-pointer transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 group"
                     >
@@ -556,14 +414,10 @@ export default function PublicVerifyPage() {
                           <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 uppercase font-semibold">
                             {ev.integrity_status}
                           </span>
+                          <span className="text-[10px] px-2 py-0.5 rounded bg-dark-800 text-dark-400 border border-dark-700 uppercase font-semibold">
+                            {ev.blockchain_status}
+                          </span>
                         </div>
-                        <p className="text-sm font-semibold text-white group-hover:text-vault-300 transition-colors flex items-center gap-1.5">
-                          <FileText className="w-3.5 h-3.5 text-vault-400" />
-                          {ev.original_filename}
-                        </p>
-                        <p className="text-[11px] text-dark-400 font-mono break-all">
-                          SHA-256: {ev.sha256_hash.substring(0, 24)}...
-                        </p>
                       </div>
 
                       <div className="flex items-center gap-2 self-end sm:self-center">

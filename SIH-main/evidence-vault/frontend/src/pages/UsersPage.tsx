@@ -50,6 +50,11 @@ export default function UsersPage() {
                     <span className={`badge text-xs border ${roleColors[u.role] || 'text-dark-400 bg-dark-600/30 border-dark-500/30'}`}>
                       {u.role.replace('_', ' ')}
                     </span>
+                    {u.rank_level ? (
+                      <span className="badge text-xs border text-dark-400 bg-dark-600/30 border-dark-500/30">
+                        Rank {u.rank_level}
+                      </span>
+                    ) : null}
                   </div>
                   <div className="mt-2 text-xs text-dark-500">
                     <p>{u.department}</p>
