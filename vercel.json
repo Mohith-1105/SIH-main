@@ -1,0 +1,11 @@
+{
+  "framework": "vite",
+  "buildCommand": "cd SIH-main/evidence-vault/frontend && npm install && npm run build",
+  "outputDirectory": "SIH-main/evidence-vault/frontend/dist",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
