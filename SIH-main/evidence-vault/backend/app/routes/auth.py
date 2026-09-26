@@ -44,9 +44,20 @@ def _detect_device(request: Request) -> str:
 
 
 def _issue_authenticated_session(user: User, client_ip: str, device: str, db: Session) -> LoginResponse:
-    token = create_access_token({"sub": str(user.id), "role": user.role})
+    from app.security.auth import normalize_role
+    canonical_role = normalize_role(user.role)
+    token = create_access_token({
+        "sub": str(user.id),
+        "user_id": user.id,
+        "role": canonical_role,
+        "email": user.email,
+        "full_name": user.full_name,
+        "department": user.department or "General",
+        "badge_number": user.badge_number or f"USR-{user.id:04d}",
+    })
     user.last_login = datetime.utcnow()
     db.commit()
+
 
     officer_label = f"Officer {user.full_name}"
     if user.badge_number:
@@ -64,7 +75,7 @@ def _issue_authenticated_session(user: User, client_ip: str, device: str, db: Se
         ip_address=client_ip,
         resource_type="AUTH",
         resource_id=user.badge_number or f"USR-{user.id:04d}",
-        details=f"{officer_label} authenticated with Multi-Factor Authentication (MFA/TOTP) successfully via {device}",
+        details=f"{officer_label} authenticated successfully via {device}",
     )
 
     return LoginResponse(
@@ -113,52 +124,8 @@ def login(req: LoginRequest, request: Request, db: Session = Depends(get_db)):
         )
         raise HTTPException(status_code=403, detail="Account disabled")
 
-    # If an MFA code was supplied directly in LoginRequest, verify it immediately
-    if req.mfa_code:
-        if not verify_user_mfa(user.email, req.mfa_code):
-            create_audit_log(
-                db,
-                user_id=user.id,
-                user_email=user.email,
-                role=user.role,
-                action="MFA_CHALLENGE",
-                status="FAILED",
-                ip_address=client_ip,
-                resource_type="AUTH",
-                resource_id=user.badge_number or f"USR-{user.id:04d}",
-                details=f"Failed MFA TOTP challenge for {user.full_name} via {device}",
-            )
-            raise HTTPException(status_code=401, detail="Invalid 6-digit MFA security code")
-        return _issue_authenticated_session(user, client_ip, device, db)
-
-    # Password verified: Issue MFA challenge token for Step 2
-    temp_token = create_temp_mfa_token(user.id, user.email)
-    secret = get_user_totp_secret(user.email)
-    demo_code = generate_current_totp(secret)
-
-    create_audit_log(
-        db,
-        user_id=user.id,
-        user_email=user.email,
-        role=user.role,
-        action="LOGIN_PASSWORD_VERIFIED",
-        status="SUCCESS",
-        ip_address=client_ip,
-        resource_type="AUTH",
-        resource_id=user.badge_number or f"USR-{user.id:04d}",
-        details=f"Primary credentials verified for {user.full_name}. MFA challenge issued.",
-    )
-
-    return LoginResponse(
-        mfa_required=True,
-        temp_token=temp_token,
-        officer_name=user.full_name,
-        badge_number=user.badge_number,
-        role=user.role,
-        mfa_type="TOTP",
-        message="Primary credentials verified. Enter the 6-digit Multi-Factor Authentication (MFA) code.",
-        demo_totp_code=demo_code,
-    )
+    # Issue direct authenticated session
+    return _issue_authenticated_session(user, client_ip, device, db)
 
 
 @router.post("/verify-mfa", response_model=LoginResponse)

@@ -1,6 +1,6 @@
 """Evidence, Version, Custody, and Relationship models"""
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, DateTime, Float, ForeignKey
+from sqlalchemy import Column, Integer, String, Text, DateTime, Float, ForeignKey, Boolean
 from app.database import Base
 
 
@@ -31,6 +31,66 @@ class Evidence(Base):
     description = Column(Text, default="")
     uploaded_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     uploaded_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Stage 2 — Evidence Intake Minimum Record Metadata
+    source = Column(String(500), default="")
+    collector = Column(String(255), default="")
+    collection_datetime = Column(DateTime, nullable=True)
+    collection_location = Column(String(500), default="")
+    condition_at_intake = Column(String(100), default="INTACT")
+    storage_location = Column(String(255), default="Digital Vault / Secure Repository")
+
+    # Malkhana / Physical Storage Registry
+    physical_location = Column(String(255), default="Malkhana Bay A-Shelf 3")
+    barcode_id = Column(String(100), default="")
+    physical_status = Column(String(50), default="CHECKED_IN")
+
+    # Auditor Compliance & Case Quarantine / Warrant Unsealing
+    is_frozen = Column(Boolean, default=False)
+    quarantine_reason = Column(Text, default="")
+    is_unsealed_by_warrant = Column(Boolean, default=False)
+    warrant_number = Column(String(100), default="")
+
+    # Deletion Approval Workflow (IO requests, Auditor approves)
+    deletion_requested = Column(Boolean, default=False)
+    deletion_request_reason = Column(Text, default="")
+    deletion_status = Column(String(50), default="NONE")  # NONE, REQUESTED, APPROVED, REJECTED
+    deletion_request_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    # Forensic & Custody Workflow
+    forensic_status = Column(String(50), default="NOT_REQUIRED")  # NOT_REQUIRED, PENDING_ANALYSIS, IN_ANALYSIS, ANALYSIS_COMPLETE
+    custody_state = Column(String(50), default="SECURE_VAULT")  # SECURE_VAULT, IN_TRANSIT_LAB, IN_FORENSIC_LAB, IN_MALKHANA, COURT_DOCKETED
+    physical_release_approved = Column(Boolean, default=False)
+    physical_release_to = Column(String(255), default="")
+
+    # Forensic Child Reports
+    parent_evidence_id = Column(Integer, ForeignKey("evidence.id"), nullable=True)
+    is_child_report = Column(Boolean, default=False)
+
+    # Stage 3 — Laboratory Analysis Responsibilities (Forensic Specialist)
+    lab_sample_id = Column(String(100), default="")
+    lab_test_requested = Column(String(255), default="")
+    lab_test_performed = Column(String(255), default="")
+    lab_qc_status = Column(String(50), default="QC_PENDING")  # QC_PENDING, QC_PASSED, QC_FAILED
+    lab_seal_intact = Column(Boolean, default=True)
+    lab_findings = Column(Text, default="")
+    lab_analyst = Column(String(255), default="")
+
+    # Stage 5 — Court Presentation & Exhibit Management (Legal Prosecutor)
+    court_exhibit_number = Column(String(100), default="")
+    court_receipt_number = Column(String(100), default="")
+    court_presentation_date = Column(DateTime, nullable=True)
+    court_action = Column(String(50), default="PENDING")  # ADMITTED, REJECTED, DEFERRED, PENDING
+    court_disposition_notes = Column(Text, default="")
+    court_order_ref = Column(String(100), default="")
+
+    # Stage 6 — Authorized Destruction Certificate
+    destruction_certificate_id = Column(String(100), default="")
+    destruction_timestamp = Column(DateTime, nullable=True)
+    destruction_authority = Column(String(255), default="")
+    destruction_method = Column(String(255), default="")
+    is_destroyed = Column(Boolean, default=False)
+
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -58,15 +118,24 @@ class CustodyEvent(Base):
     __tablename__ = "custody_events"
 
     id = Column(Integer, primary_key=True, index=True)
+    event_id = Column(String(50), default="")  # e.g. COC-000123
     evidence_id = Column(Integer, ForeignKey("evidence.id"), nullable=False, index=True)
     actor_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     actor_name = Column(String(255), nullable=False)
     actor_role = Column(String(50), nullable=False)
+    previous_custodian = Column(String(255), default="")
+    new_custodian = Column(String(255), default="")
     action = Column(String(100), nullable=False)
+    reason = Column(String(255), default="Custody Transfer")
     location = Column(String(255), default="Digital Evidence Lab")
     evidence_condition = Column(String(100), default="INTACT")
+    integrity_state = Column(String(50), default="VERIFIED")
+    authorization = Column(String(255), default="Standard Investigation Procedure")
+    digital_signature = Column(String(255), default="")
     notes = Column(Text, default="")
     sha256_hash = Column(String(64), default="")
+    previous_event_hash = Column(String(64), default="")
+    current_event_hash = Column(String(64), default="")
     timestamp = Column(DateTime, default=datetime.utcnow)
 
 

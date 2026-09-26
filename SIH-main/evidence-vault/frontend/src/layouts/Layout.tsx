@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../App';
 import { dashboardApi, authApi } from '../services/api';
+import { RoleSwitcher } from '../components/RoleSwitcher';
 import {
   LayoutDashboard, FolderOpen, Shield,
   Blocks, ClipboardList, Users, LogOut, Search,
@@ -9,15 +10,64 @@ import {
 } from 'lucide-react';
 
 
-const navItems = [
-  { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/cases', icon: FolderOpen, label: 'Cases' },
-  { to: '/reports', icon: FileText, label: 'Case Reports' },
-  { to: '/evidence', icon: Shield, label: 'Evidence Vault' },
-  { to: '/blockchain', icon: Blocks, label: 'Blockchain' },
-  { to: '/login-activity', icon: KeyRound, label: 'Login History' },
-  { to: '/audit', icon: ClipboardList, label: 'Audit Logs' },
-  { to: '/users', icon: Users, label: 'Users' },
+import { normalizeRole } from '../components/RoleGuard';
+
+interface NavItemConfig {
+  to: string;
+  icon: any;
+  label: string;
+  allowedRoles: string[];
+}
+
+const ALL_NAV_ITEMS: NavItemConfig[] = [
+  {
+    to: '/',
+    icon: LayoutDashboard,
+    label: 'Dashboard',
+    allowedRoles: ['ADMIN', 'INVESTIGATOR', 'FORENSIC_OFFICER', 'LEGAL_OFFICER', 'AUDITOR', 'CUSTODIAN'],
+  },
+  {
+    to: '/cases',
+    icon: FolderOpen,
+    label: 'Cases',
+    allowedRoles: ['INVESTIGATOR', 'FORENSIC_OFFICER', 'LEGAL_OFFICER', 'AUDITOR', 'CUSTODIAN'],
+  },
+  {
+    to: '/evidence',
+    icon: Shield,
+    label: 'Evidence Vault',
+    allowedRoles: ['INVESTIGATOR', 'FORENSIC_OFFICER', 'LEGAL_OFFICER', 'AUDITOR', 'CUSTODIAN'],
+  },
+  {
+    to: '/reports',
+    icon: FileText,
+    label: 'Case Reports',
+    allowedRoles: ['INVESTIGATOR', 'FORENSIC_OFFICER', 'LEGAL_OFFICER'],
+  },
+  {
+    to: '/blockchain',
+    icon: Blocks,
+    label: 'Blockchain',
+    allowedRoles: ['ADMIN', 'INVESTIGATOR', 'FORENSIC_OFFICER', 'LEGAL_OFFICER', 'AUDITOR', 'CUSTODIAN'],
+  },
+  {
+    to: '/login-activity',
+    icon: KeyRound,
+    label: 'Login History',
+    allowedRoles: ['ADMIN', 'AUDITOR'],
+  },
+  {
+    to: '/audit',
+    icon: ClipboardList,
+    label: 'Audit Logs',
+    allowedRoles: ['ADMIN', 'AUDITOR'],
+  },
+  {
+    to: '/users',
+    icon: Users,
+    label: 'Users',
+    allowedRoles: ['ADMIN'],
+  },
 ];
 
 export default function Layout() {
@@ -46,12 +96,27 @@ export default function Layout() {
     } catch { /* ignore */ }
   };
 
+  const currentRole = normalizeRole(user?.role);
+  const visibleNavItems = ALL_NAV_ITEMS.filter((item) =>
+    item.allowedRoles.map((r) => normalizeRole(r)).includes(currentRole)
+  );
+
   const roleColor: Record<string, string> = {
-    ADMIN: 'text-red-400',
+    ADMIN: 'text-slate-400',
     INVESTIGATOR: 'text-blue-400',
-    FORENSIC_OFFICER: 'text-emerald-400',
+    FORENSIC_OFFICER: 'text-cyan-400',
     LEGAL_OFFICER: 'text-amber-400',
     AUDITOR: 'text-purple-400',
+    CUSTODIAN: 'text-emerald-400',
+  };
+
+  const roleWorkspaceLabel: Record<string, string> = {
+    ADMIN: 'System Administration',
+    INVESTIGATOR: 'Investigative Module',
+    FORENSIC_OFFICER: 'Forensic & Lab Workspace',
+    LEGAL_OFFICER: 'Prosecution & Court Workspace',
+    AUDITOR: 'Compliance Oversight',
+    CUSTODIAN: 'Evidence Custody',
   };
 
   return (
@@ -69,9 +134,18 @@ export default function Layout() {
           )}
         </div>
 
+        {/* Role Workspace Indicator */}
+        {!collapsed && (
+          <div className="px-4 py-2 border-b border-dark-700/40 bg-dark-950/40">
+            <span className="text-[9px] font-mono uppercase tracking-widest text-dark-400 font-semibold block">
+              {roleWorkspaceLabel[currentRole] || 'Role Workspace'}
+            </span>
+          </div>
+        )}
+
         {/* Nav */}
         <nav className="flex-1 py-4 px-2 space-y-1 overflow-y-auto">
-          {navItems.map((item) => (
+          {visibleNavItems.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
@@ -160,6 +234,9 @@ export default function Layout() {
           </div>
 
           <div className="flex items-center gap-3">
+            {/* 1-Click Role Switcher for Hackathon Demo */}
+            <RoleSwitcher />
+
             {/* Notifications */}
             <button className="relative p-2 text-dark-400 hover:text-dark-200 transition-colors">
               <Bell className="w-5 h-5" />

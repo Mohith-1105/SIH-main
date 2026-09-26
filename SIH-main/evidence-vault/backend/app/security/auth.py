@@ -70,55 +70,96 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     return user
 
 
-# --- RBAC ---
+# --- Role Normalization & Canonical RBAC Mapping ---
+ROLE_ALIASES = {
+    "ADMIN": "ADMIN",
+    "SYSTEM_ADMIN": "ADMIN",
+    "INVESTIGATOR": "INVESTIGATOR",
+    "IO": "INVESTIGATOR",
+    "DETECTIVE": "INVESTIGATOR",
+    "FORENSIC_OFFICER": "FORENSIC_OFFICER",
+    "FORENSIC_SPECIALIST": "FORENSIC_OFFICER",
+    "LAB_ANALYST": "FORENSIC_OFFICER",
+    "LEGAL_OFFICER": "LEGAL_OFFICER",
+    "PROSECUTOR": "LEGAL_OFFICER",
+    "COURT_OFFICIAL": "LEGAL_OFFICER",
+    "AUDITOR": "AUDITOR",
+    "COMPLIANCE_AUDITOR": "AUDITOR",
+    "CUSTODIAN": "CUSTODIAN",
+    "MALKHANA_CUSTODIAN": "CUSTODIAN",
+}
+
+
+def normalize_role(role: str) -> str:
+    if not role:
+        return "INVESTIGATOR"
+    return ROLE_ALIASES.get(role.upper(), role.upper())
+
+
+# --- Enterprise 6-Role Permissions Matrix ---
 ROLE_PERMISSIONS = {
     "ADMIN": {
         "users.read", "users.write",
-        "cases.read", "cases.write",
-        "evidence.read", "evidence.write", "evidence.delete",
-        "evidence.upload", "evidence.transfer", "evidence.verify", "evidence.version",
-        "blockchain.read", "blockchain.verify",
-        "audit.read",
-        "ai.analyze",
-        "reports.generate",
-        "demo.tamper",
+        "system.health", "system.backup", "system.storage", "system.mfa_policy",
+        "privilege.approve",
+        "auth.audit.read",  # Login/access logs only; ZERO evidence content or case investigation access
     },
     "INVESTIGATOR": {
         "cases.read", "cases.write",
-        "evidence.read", "evidence.write",
-        "evidence.upload", "evidence.transfer",
+        "evidence.upload", "evidence.read", "evidence.transfer",
+        "evidence.request_deletion",
         "blockchain.read",
-        "audit.read",
+        "reports.bsa_receipt",
         "ai.analyze",
-        "reports.generate",
+        "demo.tamper",
     },
     "FORENSIC_OFFICER": {
         "cases.read",
         "evidence.read",
-        "evidence.verify", "evidence.version",
+        "evidence.verify",
+        "evidence.upload_child_report",
+        "evidence.version",
+        "evidence.transfer_return",
         "blockchain.read",
-        "audit.read",
         "ai.analyze",
-        "reports.generate",
+        "reports.forensic",
     },
     "LEGAL_OFFICER": {
         "cases.read",
         "evidence.read",
+        "evidence.watermarked_view",
+        "evidence.court_export",
+        "cases.approve_court_ready",
         "blockchain.read",
-        "audit.read",
-        "reports.generate",
+        "reports.case_dossier",
     },
     "AUDITOR": {
         "cases.read",
-        "evidence.read",
+        "evidence.read",  # Metadata & hash only
+        "audit.read",  # Global immutable audit logs
+        "cases.quarantine",
+        "evidence.quarantine",
+        "evidence.approve_deletion",
+        "evidence.unseal_warrant",
         "blockchain.read", "blockchain.verify",
-        "audit.read",
+        "compliance.scorecard",
+        "reports.compliance",
+    },
+    "CUSTODIAN": {
+        "cases.read",
+        "evidence.read",  # Physical profile only (barcode, shelf, status)
+        "malkhana.read",
+        "malkhana.update_location",
+        "malkhana.check_in_out",
+        "malkhana.approve_physical_release",
+        "reports.physical_inventory",
     },
 }
 
 
 def check_permission(user: User, permission: str):
-    perms = ROLE_PERMISSIONS.get(user.role, set())
+    role = normalize_role(user.role)
+    perms = ROLE_PERMISSIONS.get(role, set())
     if permission not in perms:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -127,7 +168,8 @@ def check_permission(user: User, permission: str):
 
 
 def has_permission(user: User, permission: str) -> bool:
-    return permission in ROLE_PERMISSIONS.get(user.role, set())
+    role = normalize_role(user.role)
+    return permission in ROLE_PERMISSIONS.get(role, set())
 
 
 def require_permission(permission: str):
@@ -140,19 +182,29 @@ def require_permission(permission: str):
 
 def require_any_permission(*permissions: str):
     def _checker(user: User = Depends(get_current_user)):
-        if not any(has_permission(user, p) for p in permissions):
+        role = normalize_role(user.role)
+        perms = ROLE_PERMISSIONS.get(role, set())
+        if not any(p in perms for p in permissions):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Role '{user.role}' lacks required permission",
+                detail=f"Role '{user.role}' lacks required permissions",
             )
         return user
     return _checker
 
 
 def visible_case_ids(user: User, db: Session):
-    """INVESTIGATOR sees assigned cases; others with cases.read see all."""
+    """
+    ABAC filter:
+    - INVESTIGATOR: Only cases assigned to them or created by them.
+    - FORENSIC_OFFICER, LEGAL_OFFICER, AUDITOR, CUSTODIAN: All cases relevant to their respective workflows.
+    - ADMIN: No case narrative access.
+    """
     from app.models.case import Case
-    if user.role == "ADMIN" or user.role in {"AUDITOR", "LEGAL_OFFICER", "FORENSIC_OFFICER"}:
+    role = normalize_role(user.role)
+    if role == "ADMIN":
+        return []  # Admin has zero case investigation data access
+    if role in {"AUDITOR", "LEGAL_OFFICER", "FORENSIC_OFFICER", "CUSTODIAN"}:
         return None
     rows = db.query(Case.id).filter(
         (Case.assigned_user_id == user.id) | (Case.created_by == user.id)
@@ -161,24 +213,73 @@ def visible_case_ids(user: User, db: Session):
 
 
 def ensure_case_access(user: User, case, db: Session):
+    role = normalize_role(user.role)
+    if role == "ADMIN":
+        raise HTTPException(
+            status_code=403,
+            detail="Separation of Duties: System Administrators are restricted from viewing case narratives or investigation details."
+        )
     ids = visible_case_ids(user, db)
-    if ids is None:
-        return
-    if case.id not in ids:
-        raise HTTPException(status_code=403, detail="Not authorized to access this case")
+    if ids is not None and case.id not in ids:
+        raise HTTPException(status_code=403, detail="ABAC Policy: You are not authorized to access this case file.")
 
 
 def ensure_evidence_access(user: User, evidence, db: Session):
-    if user.role == "ADMIN" or user.role in {"AUDITOR"}:
+    """ABAC check for general evidence metadata access."""
+    role = normalize_role(user.role)
+    if role == "ADMIN":
+        raise HTTPException(
+            status_code=403,
+            detail="Separation of Duties: System Administrators have zero access to evidence items, hashes, or case records."
+        )
+    if role == "INVESTIGATOR":
+        from app.models.case import Case
+        case = db.query(Case).filter(Case.id == evidence.case_id).first()
+        is_owner = (evidence.uploaded_by == user.id) or (case and (case.assigned_user_id == user.id or case.created_by == user.id))
+        if not is_owner:
+            raise HTTPException(status_code=403, detail="ABAC Policy: Investigating Officers can only access evidence in their assigned cases.")
+
+
+def ensure_evidence_content_access(user: User, evidence, db: Session):
+    """
+    Strict ABAC check for viewing/downloading the raw decrypted evidence file:
+    - ADMIN: 403 Forbidden (Separation of duties).
+    - CUSTODIAN: 403 Forbidden (Physical inventory tracking only).
+    - AUDITOR: 403 Forbidden unless explicitly unsealed via valid judicial warrant.
+    - INVESTIGATOR (IO): Only their own assigned cases.
+    - FORENSIC_OFFICER: Allowed for laboratory examination.
+    - LEGAL_OFFICER: Allowed for court trial preparation (watermarked).
+    """
+    role = normalize_role(user.role)
+    if role == "ADMIN":
+        raise HTTPException(
+            status_code=403,
+            detail="Separation of Duties Policy: System Administrators have zero access to evidence file content, case narratives, or suspect PII."
+        )
+    if role == "CUSTODIAN":
+        raise HTTPException(
+            status_code=403,
+            detail="Physical Custody Restriction: Malkhana Custodians only manage physical barcoded inventory and have no digital file content access."
+        )
+    if role == "AUDITOR":
+        if not getattr(evidence, "is_unsealed_by_warrant", False):
+            raise HTTPException(
+                status_code=403,
+                detail="Warrant Required: Compliance Auditors can only inspect audit logs and hashes. Evidence file contents are locked unless unsealed with a judicial court warrant."
+            )
         return
-    if user.role == "FORENSIC_OFFICER":
-        # Assigned evidence: currently in their custody, or any they may verify
-        if evidence.custodian_id == user.id:
-            return
-        # Forensic officers may view evidence belonging to open lab workflow (all cases)
+    if role == "INVESTIGATOR":
+        from app.models.case import Case
+        case = db.query(Case).filter(Case.id == evidence.case_id).first()
+        is_owner = (evidence.uploaded_by == user.id) or (case and (case.assigned_user_id == user.id or case.created_by == user.id))
+        if not is_owner:
+            raise HTTPException(
+                status_code=403,
+                detail="ABAC Policy: Investigating Officers can only access evidence within their assigned cases."
+            )
         return
-    if user.role == "LEGAL_OFFICER":
+    if role == "FORENSIC_OFFICER":
         return
-    ids = visible_case_ids(user, db)
-    if ids is not None and evidence.case_id not in ids:
-        raise HTTPException(status_code=403, detail="Not authorized to access this evidence")
+    if role == "LEGAL_OFFICER":
+        return
+

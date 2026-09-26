@@ -16,6 +16,7 @@ import LoginActivityPage from './pages/LoginActivityPage';
 import ReportsPage from './pages/ReportsPage';
 import UsersPage from './pages/UsersPage';
 import PublicVerifyPage from './pages/PublicVerifyPage';
+import RoleGuard from './components/RoleGuard';
 import './App.css';
 
 interface AuthCtx {
@@ -91,21 +92,54 @@ function App() {
           <Route path="/verify/evidence/:evidenceId" element={<PublicVerifyPage />} />
           <Route path="/verify/case/:caseId" element={<PublicVerifyPage />} />
           <Route path="/verify/:id" element={<PublicVerifyPage />} />
+
           <Route path="/" element={
             <ProtectedRoute><Layout /></ProtectedRoute>
           }>
             <Route index element={<DashboardPage />} />
-            <Route path="cases" element={<CasesPage />} />
-            <Route path="cases/:id" element={<CaseDetailPage />} />
-            <Route path="evidence" element={<EvidenceVaultPage />} />
-            <Route path="evidence/:id" element={<EvidenceDetailPage />} />
+            <Route path="cases" element={
+              <RoleGuard allowedRoles={['INVESTIGATOR', 'FORENSIC_OFFICER', 'LEGAL_OFFICER', 'AUDITOR', 'CUSTODIAN']}>
+                <CasesPage />
+              </RoleGuard>
+            } />
+            <Route path="cases/:id" element={
+              <RoleGuard allowedRoles={['INVESTIGATOR', 'FORENSIC_OFFICER', 'LEGAL_OFFICER', 'AUDITOR', 'CUSTODIAN']}>
+                <CaseDetailPage />
+              </RoleGuard>
+            } />
+            <Route path="evidence" element={
+              <RoleGuard allowedRoles={['INVESTIGATOR', 'FORENSIC_OFFICER', 'LEGAL_OFFICER', 'AUDITOR', 'CUSTODIAN']}>
+                <EvidenceVaultPage />
+              </RoleGuard>
+            } />
+            <Route path="evidence/:id" element={
+              <RoleGuard allowedRoles={['INVESTIGATOR', 'FORENSIC_OFFICER', 'LEGAL_OFFICER', 'AUDITOR', 'CUSTODIAN']}>
+                <EvidenceDetailPage />
+              </RoleGuard>
+            } />
             <Route path="evidence/:id/passport" element={<EvidencePassportPage />} />
             <Route path="blockchain" element={<BlockchainPage />} />
-            <Route path="login-activity" element={<LoginActivityPage />} />
+            <Route path="login-activity" element={
+              <RoleGuard allowedRoles={['ADMIN', 'AUDITOR']}>
+                <LoginActivityPage />
+              </RoleGuard>
+            } />
             <Route path="login-history" element={<Navigate to="/login-activity" replace />} />
-            <Route path="reports" element={<ReportsPage />} />
-            <Route path="audit" element={<AuditLogsPage />} />
-            <Route path="users" element={<UsersPage />} />
+            <Route path="reports" element={
+              <RoleGuard allowedRoles={['INVESTIGATOR', 'FORENSIC_OFFICER', 'LEGAL_OFFICER']}>
+                <ReportsPage />
+              </RoleGuard>
+            } />
+            <Route path="audit" element={
+              <RoleGuard allowedRoles={['AUDITOR', 'ADMIN']}>
+                <AuditLogsPage />
+              </RoleGuard>
+            } />
+            <Route path="users" element={
+              <RoleGuard allowedRoles={['ADMIN']}>
+                <UsersPage />
+              </RoleGuard>
+            } />
           </Route>
         </Routes>
       </BrowserRouter>

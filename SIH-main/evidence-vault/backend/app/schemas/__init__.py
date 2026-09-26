@@ -68,6 +68,14 @@ class CaseCreate(BaseModel):
     case_type: str = "GENERAL"
     priority: str = "MEDIUM"
     investigating_officer: str = ""
+    incident_date: Optional[datetime] = None
+    incident_location: Optional[str] = ""
+    reporting_authority: Optional[str] = ""
+    assigned_team: Optional[str] = "Special Investigation Unit"
+    persons_involved: Optional[str] = ""
+    jurisdiction: Optional[str] = "Delhi NCT Central"
+    retention_category: Optional[str] = "STANDARD_5YR"
+    confidentiality_level: Optional[str] = "CONFIDENTIAL"
 
 
 class CaseUpdate(BaseModel):
@@ -77,6 +85,15 @@ class CaseUpdate(BaseModel):
     status: Optional[str] = None
     priority: Optional[str] = None
     investigating_officer: Optional[str] = None
+    incident_date: Optional[datetime] = None
+    incident_location: Optional[str] = None
+    reporting_authority: Optional[str] = None
+    assigned_team: Optional[str] = None
+    persons_involved: Optional[str] = None
+    jurisdiction: Optional[str] = None
+    retention_category: Optional[str] = None
+    confidentiality_level: Optional[str] = None
+    legal_hold: Optional[bool] = None
 
 
 class CaseOut(BaseModel):
@@ -90,6 +107,32 @@ class CaseOut(BaseModel):
     investigating_officer: str
     assigned_user_id: Optional[int] = None
     created_by: Optional[int] = None
+    
+    # Stage 1 metadata
+    incident_date: Optional[datetime] = None
+    incident_location: Optional[str] = ""
+    reporting_authority: Optional[str] = ""
+    assigned_team: Optional[str] = ""
+    persons_involved: Optional[str] = ""
+    jurisdiction: Optional[str] = ""
+    retention_category: Optional[str] = "STANDARD_5YR"
+    confidentiality_level: Optional[str] = "CONFIDENTIAL"
+
+    # Auditor Freeze/Quarantine
+    is_frozen: Optional[bool] = False
+    quarantine_reason: Optional[str] = ""
+
+    # Legal Prosecutor Court Approval
+    is_court_ready: Optional[bool] = False
+    court_docket_number: Optional[str] = ""
+
+    # Stage 6 Closure & Legal Hold
+    legal_hold: Optional[bool] = False
+    closure_checklist_json: Optional[str] = "{}"
+    closed_at: Optional[datetime] = None
+    closed_by: Optional[int] = None
+    archived_at: Optional[datetime] = None
+
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     evidence_count: int = 0
@@ -128,9 +171,130 @@ class EvidenceOut(BaseModel):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
+    # Stage 2 Minimum Evidence Record Metadata
+    source: Optional[str] = ""
+    collector: Optional[str] = ""
+    collection_datetime: Optional[datetime] = None
+    collection_location: Optional[str] = ""
+    condition_at_intake: Optional[str] = "INTACT"
+    storage_location: Optional[str] = "Digital Vault / Secure Repository"
+
+    # Physical Storage Registry
+    physical_location: Optional[str] = "Malkhana Bay A-Shelf 3"
+    barcode_id: Optional[str] = ""
+    physical_status: Optional[str] = "CHECKED_IN"
+    physical_release_approved: Optional[bool] = False
+    physical_release_to: Optional[str] = ""
+
+    # Auditor Quarantine & Warrant
+    is_frozen: Optional[bool] = False
+    quarantine_reason: Optional[str] = ""
+    is_unsealed_by_warrant: Optional[bool] = False
+    warrant_number: Optional[str] = ""
+
+    # Deletion Approval
+    deletion_requested: Optional[bool] = False
+    deletion_request_reason: Optional[str] = ""
+    deletion_status: Optional[str] = "NONE"
+
+    # Forensic & Custody states
+    forensic_status: Optional[str] = "NOT_REQUIRED"
+    custody_state: Optional[str] = "SECURE_VAULT"
+    parent_evidence_id: Optional[int] = None
+    is_child_report: Optional[bool] = False
+
+    # Stage 3 Laboratory Testing (Forensic Specialist)
+    lab_sample_id: Optional[str] = ""
+    lab_test_requested: Optional[str] = ""
+    lab_test_performed: Optional[str] = ""
+    lab_qc_status: Optional[str] = "QC_PENDING"
+    lab_seal_intact: Optional[bool] = True
+    lab_findings: Optional[str] = ""
+    lab_analyst: Optional[str] = ""
+
+    # Stage 5 Court Presentation & Exhibits (Legal Prosecutor)
+    court_exhibit_number: Optional[str] = ""
+    court_receipt_number: Optional[str] = ""
+    court_presentation_date: Optional[datetime] = None
+    court_action: Optional[str] = "PENDING"
+    court_disposition_notes: Optional[str] = ""
+    court_order_ref: Optional[str] = ""
+
+    # Stage 6 Authorized Destruction Certificate
+    destruction_certificate_id: Optional[str] = ""
+    destruction_timestamp: Optional[datetime] = None
+    destruction_authority: Optional[str] = ""
+    destruction_method: Optional[str] = ""
+    is_destroyed: Optional[bool] = False
 
     class Config:
         from_attributes = True
+
+
+# --- Workflow Requests ---
+class DeletionRequest(BaseModel):
+    reason: str
+
+
+class DeletionReviewRequest(BaseModel):
+    decision: str  # "APPROVED" or "REJECTED"
+    comments: Optional[str] = ""
+
+
+class QuarantineRequest(BaseModel):
+    reason: str
+    freeze: bool = True
+
+
+class WarrantUnsealRequest(BaseModel):
+    warrant_number: str
+    court_jurisdiction: str
+    justification: str
+
+
+class CustodianLocationRequest(BaseModel):
+    physical_location: str
+    notes: Optional[str] = ""
+
+
+class CustodianCheckInOutRequest(BaseModel):
+    action: str  # "CHECK_OUT" or "CHECK_IN"
+    officer_name: str
+    badge_number: str
+    purpose: str
+
+
+class PhysicalReleaseApprovalRequest(BaseModel):
+    approved_recipient: str
+    authorization_ref: str
+
+
+class PrivilegeRequestCreate(BaseModel):
+    target_user_email: str
+    target_full_name: str
+    requested_role: str
+    justification: str
+
+
+class PrivilegeRequestReview(BaseModel):
+    decision: str  # "APPROVED" or "REJECTED"
+
+
+class PrivilegeRequestOut(BaseModel):
+    id: int
+    requested_by_email: str
+    target_user_email: str
+    target_full_name: str
+    requested_role: str
+    justification: str
+    status: str
+    reviewed_by: Optional[str] = None
+    reviewed_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
 
 
 class EvidencePassport(BaseModel):
@@ -187,14 +351,23 @@ class VersionOut(BaseModel):
 # --- Custody ---
 class CustodyEventOut(BaseModel):
     id: int
+    event_id: Optional[str] = ""
     evidence_id: int
     actor_name: str
     actor_role: str
+    previous_custodian: Optional[str] = ""
+    new_custodian: Optional[str] = ""
     action: str
+    reason: Optional[str] = "Custody Transfer"
     location: str
     evidence_condition: str
+    integrity_state: Optional[str] = "VERIFIED"
+    authorization: Optional[str] = "Standard Investigation Procedure"
+    digital_signature: Optional[str] = ""
     notes: str
     sha256_hash: str
+    previous_event_hash: Optional[str] = ""
+    current_event_hash: Optional[str] = ""
     timestamp: Optional[datetime] = None
 
     class Config:
@@ -206,7 +379,51 @@ class CustodyTransferRequest(BaseModel):
     target_user_id: Optional[int] = None
     location: str = "Digital Evidence Lab"
     condition: str = "INTACT"
+    reason: Optional[str] = "Forensic Examination"
+    authorization: Optional[str] = "Investigating Officer Transfer Order"
     notes: str = ""
+
+
+# --- End-to-End Workflow Requests ---
+class EvidenceStateTransitionRequest(BaseModel):
+    new_state: str  # REGISTERED, SECURED, ASSIGNED, IN_EXAMINATION, ANALYSIS_COMPLETE, RETURNED, LEGAL_REVIEW, COURT_SUBMITTED, COURT_DISPOSITION, CASE_CLOSED, ARCHIVED, RETENTION_EXPIRED, AUTHORIZED_DESTRUCTION
+    reason: str
+    notes: Optional[str] = ""
+
+
+class LabAnalysisRequest(BaseModel):
+    sample_id: str
+    test_requested: str
+    test_performed: str
+    qc_status: str = "QC_PASSED"  # QC_PASSED, QC_FAILED, QC_PENDING
+    seal_intact: bool = True
+    findings: str
+    analyst: Optional[str] = None
+
+
+class CourtActionRequest(BaseModel):
+    exhibit_number: str
+    court_receipt_number: str
+    court_action: str  # ADMITTED, REJECTED, DEFERRED, PENDING
+    presentation_notes: Optional[str] = ""
+    court_order_ref: Optional[str] = ""
+
+
+class AuthorizedDestructionRequest(BaseModel):
+    retention_verified: bool = True
+    legal_hold_verified: bool = True
+    destruction_method: str = "NIST SP 800-88 Cryptographic Shredding"
+    reason: str = "Statutory Retention Period Expired"
+
+
+class LegalHoldRequest(BaseModel):
+    legal_hold: bool
+    reason: str
+
+
+class CaseCloseRequest(BaseModel):
+    closure_reason: str = "Investigation & Legal Proceedings Complete"
+    notes: Optional[str] = ""
 
 
 # --- AI ---

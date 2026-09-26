@@ -61,7 +61,22 @@ export const caseApi = {
     api.get(`/api/cases/${id}/flow`),
   advanceStage: (id: number, stageId: string) =>
     api.post(`/api/cases/${id}/advance-stage?stage_id=${stageId}`),
+  approveCourtReady: (id: number, docketNumber?: string) =>
+    api.post(`/api/cases/${id}/court-ready${docketNumber ? `?docket_number=${docketNumber}` : ''}`),
+  markCourtReady: (id: number, docketNumber?: string) =>
+    api.post(`/api/cases/${id}/court-ready${docketNumber ? `?docket_number=${docketNumber}` : ''}`),
+  quarantine: (id: number, reason: string, freeze = true) =>
+    api.post(`/api/cases/${id}/quarantine`, { reason, freeze }),
+  getClosureChecklist: (id: number) =>
+    api.get(`/api/cases/${id}/closure-checklist`),
+  closeCase: (id: number, data: { reason: string; notes?: string }) =>
+    api.post(`/api/cases/${id}/close`, data),
+  archiveCase: (id: number) =>
+    api.post(`/api/cases/${id}/archive`),
+  toggleLegalHold: (id: number, data: { legal_hold: boolean; reason?: string }) =>
+    api.post(`/api/cases/${id}/legal-hold`, data),
 };
+export const casesApi = caseApi;
 
 // --- Evidence API ---
 export const evidenceApi = {
@@ -75,7 +90,7 @@ export const evidenceApi = {
   getPassport: (id: number, host?: string) =>
     api.get(`/api/evidence/${id}/passport`, { params: host ? { host } : {} }),
   verify: (id: number) => api.post(`/api/evidence/${id}/verify`),
-  transfer: (id: number, data: { recipient_user_id?: number; target_user_id?: number; location?: string; condition?: string; notes?: string }) =>
+  transfer: (id: number | string, data: any) =>
     api.post(`/api/evidence/${id}/transfer`, data),
   getVersions: (id: number) => api.get(`/api/evidence/${id}/versions`),
   createVersion: (id: number, formData: FormData) =>
@@ -85,9 +100,57 @@ export const evidenceApi = {
   getCustody: (id: number) => api.get(`/api/evidence/${id}/custody`),
   getCaseEvidence: (caseId: number) => api.get(`/api/cases/${caseId}/evidence`),
   getGraph: (id: number) => api.get(`/api/evidence/${id}/graph`),
-  download: (id: number) =>
+  download: (id: number | string) =>
     api.get(`/api/evidence/${id}/download`, { responseType: 'blob' }),
+  watermarkedView: (id: number | string) =>
+    api.get(`/api/evidence/${id}/watermarked-view`, { responseType: 'blob' }),
+  requestDeletion: (id: number | string, reason: string) =>
+    api.post(`/api/evidence/${id}/request-deletion`, { reason }),
+  approveDeletion: (id: number | string, decision: boolean | string, comments = '') =>
+    api.post(`/api/evidence/${id}/approve-deletion`, {
+      decision: typeof decision === 'boolean' ? (decision ? 'APPROVED' : 'REJECTED') : decision,
+      comments
+    }),
+  quarantine: (id: number | string, reason: string, freeze = true) =>
+    api.post(`/api/evidence/${id}/quarantine`, { reason, freeze }),
+  unsealWarrant: (id: number | string, data: any) =>
+    api.post(`/api/evidence/${id}/unseal-warrant`, data),
+  uploadChildReport: (id: number | string, formData: FormData) =>
+    api.post(`/api/evidence/${id}/child-report`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
+  updateCustodianLocation: (id: number | string, data: any) =>
+    api.put(`/api/evidence/${id}/malkhana/location`, {
+      physical_location: data.storage_location || data.physical_location,
+      notes: data.notes || ''
+    }),
+  updateMalkhanaLocation: (id: number | string, physical_location: string, notes = '') =>
+    api.put(`/api/evidence/${id}/malkhana/location`, { physical_location, notes }),
+  checkInOut: (id: number | string, data: any) =>
+    api.post(`/api/evidence/${id}/malkhana/check-in-out`, {
+      action: data.action,
+      purpose: data.reason || data.purpose || 'Custody inspection'
+    }),
+  checkInOutMalkhana: (id: number | string, data: { action: string; officer_name: string; badge_number: string; purpose: string }) =>
+    api.post(`/api/evidence/${id}/malkhana/check-in-out`, data),
+  approveRelease: (id: number | string, data: any) =>
+    api.post(`/api/evidence/${id}/malkhana/approve-release`, {
+      approved_recipient: data.released_to || data.approved_recipient,
+      authorization_ref: data.authorization_ref || 'DIGITAL_AUTH'
+    }),
+  approvePhysicalRelease: (id: number | string, data: { approved_recipient: string; authorization_ref: string }) =>
+    api.post(`/api/evidence/${id}/malkhana/approve-release`, data),
+  // Section 26 & Stage 3-6 Workflow Endpoints
+  transitionState: (id: number | string, data: { new_state: string; reason: string; authorization?: string; location?: string; condition?: string }) =>
+    api.post(`/api/evidence/${id}/transition-state`, data),
+  recordLabAnalysis: (id: number | string, data: { sample_id?: string; test_performed: string; qc_status: string; seal_intact: boolean; findings: string; parent_evidence_id?: string }) =>
+    api.post(`/api/evidence/${id}/lab-analysis`, data),
+  recordCourtAction: (id: number | string, data: { court_action: string; exhibit_number?: string; receipt_number?: string; disposition_notes?: string; court_order_ref?: string }) =>
+    api.post(`/api/evidence/${id}/court-action`, data),
+  authorizedDestruction: (id: number | string, data: { destruction_authority: string; destruction_method: string; notes?: string }) =>
+    api.post(`/api/evidence/${id}/authorized-destruction`, data),
 };
+
 
 // --- Public Verification API (No Login Required) ---
 export const publicApi = {
@@ -169,15 +232,37 @@ export const userApi = {
   list: () => api.get('/api/users'),
   create: (data: Record<string, string>) =>
     api.post('/api/users', data),
+  update: (id: number, data: Record<string, any>) =>
+    api.put(`/api/users/${id}`, data),
+  deactivate: (id: number) =>
+    api.delete(`/api/users/${id}`),
+  getPrivilegeRequests: () =>
+    api.get('/api/users/privilege-requests'),
+  submitPrivilegeRequest: (data: Record<string, string>) =>
+    api.post('/api/users/privilege-requests', data),
+  reviewPrivilegeRequest: (id: number, decision: string) =>
+    api.post(`/api/users/privilege-requests/${id}/review`, { decision }),
+  configureMfaPolicy: (policy: Record<string, any>) =>
+    api.post('/api/users/system/mfa-policy', policy),
+  initiateBackup: () =>
+    api.post('/api/users/system/backup'),
 };
 
 // --- Dashboard API ---
 export const dashboardApi = {
   getStats: () => api.get('/api/dashboard'),
+  getAdminDashboard: () => api.get('/api/dashboard/admin'),
+  getIODashboard: () => api.get('/api/dashboard/io'),
+  getForensicDashboard: () => api.get('/api/dashboard/forensic'),
+  getProsecutorDashboard: () => api.get('/api/dashboard/prosecutor'),
+  getAuditorDashboard: () => api.get('/api/dashboard/auditor'),
+  getCustodianDashboard: () => api.get('/api/dashboard/custodian'),
+  getRolesWorkflow: () => api.get('/api/roles/workflow'),
   search: (q: string) => api.get('/api/search', { params: { q } }),
   simulateTamper: (evidenceId: number) =>
     api.post(`/api/demo/simulate-tamper?evidence_id=${evidenceId}`),
 };
+
 
 // --- Reports API ---
 export const reportApi = {

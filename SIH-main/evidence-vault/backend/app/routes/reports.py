@@ -12,7 +12,7 @@ from app.models.evidence import Evidence, CustodyEvent
 from app.models.case import Case
 from app.models.ai_analysis import AIAnalysis
 from app.models.user import User
-from app.security.auth import require_permission
+from app.security.auth import require_permission, require_any_permission
 from app.blockchain import verify_evidence_blocks
 from app.utils.helpers import create_audit_log
 
@@ -162,7 +162,7 @@ def get_case_report_summary(
     case_type: Optional[str] = Query(None),
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
-    user: User = Depends(require_permission("reports.generate")),
+    user: User = Depends(require_any_permission("cases.read", "reports.generate", "reports.bsa_receipt", "reports.forensic", "reports.case_dossier", "reports.compliance")),
     db: Session = Depends(get_db),
 ):
     """Retrieve summarized weekly/monthly case analytics, classification breakdown, and case roster."""
@@ -177,7 +177,7 @@ def download_case_report_pdf(
     case_type: Optional[str] = Query(None),
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
-    user: User = Depends(require_permission("reports.generate")),
+    user: User = Depends(require_any_permission("cases.read", "reports.generate", "reports.bsa_receipt", "reports.forensic", "reports.case_dossier", "reports.compliance")),
     db: Session = Depends(get_db),
 ):
     """Generate and stream an official, formatted police/investigation PDF dossier for cases."""
