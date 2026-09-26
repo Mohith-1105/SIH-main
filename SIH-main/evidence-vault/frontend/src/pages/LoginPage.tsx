@@ -46,7 +46,13 @@ export default function LoginPage() {
         setError('Authentication failed. No access token returned.');
       }
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Authentication failed. Please verify credentials.');
+      if (err.response?.data?.detail) {
+        setError(err.response.data.detail);
+      } else if (err.code === 'ERR_NETWORK' || err.message?.includes('Network Error')) {
+        setError('Cannot connect to backend API server. Ensure the backend is active at http://127.0.0.1:8000');
+      } else {
+        setError('Authentication failed. Please verify credentials or select a profile from the dropdown.');
+      }
     } finally {
       setLoading(false);
     }
