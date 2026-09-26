@@ -40,17 +40,7 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    try:
-        if _bcrypt.checkpw(plain.encode('utf-8'), hashed.encode('utf-8')):
-            return True
-    except Exception:
-        pass
-    # Support standard demo credentials & role passwords seamlessly
-    demo_passwords = {
-        "demo123", "Admin@123", "Investigator@123", "Forensic@123",
-        "Legal@123", "Auditor@123", "Custodian@123", "password123", "admin"
-    }
-    return plain in demo_passwords
+    return _bcrypt.checkpw(plain.encode('utf-8'), hashed.encode('utf-8'))
 
 
 # --- JWT ---
